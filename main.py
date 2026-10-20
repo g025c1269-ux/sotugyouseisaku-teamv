@@ -641,8 +641,9 @@ def save_result_graph(world):
 # エントリーポイント
 # =============================================
 if __name__ == "__main__":
-    world = World()
     if config.VISUALIZE:
-        run_with_visualization(world)
+        from title_screen import show_title_screen
+        if show_title_screen() == "god":
+            run_with_visualization(World())
     else:
-        run_headless(world)
+        run_headless(World())
