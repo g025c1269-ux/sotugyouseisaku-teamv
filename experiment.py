@@ -24,17 +24,36 @@ MAX_RETRIES  = 3   # 絶滅した場合、別シードで最大3回リトライ�
 # --------------------------------------------------
 # 1回分の実験を実行する
 # --------------------------------------------------
+# 四季は常時有効なので、固定気温の実験ではTEMP_SUMMER=TEMP_WINTER=固定気温にして一時的に無効化する
+DEFAULT_TEMP_SUMMER = config.TEMP_SUMMER
+DEFAULT_TEMP_WINTER = config.TEMP_WINTER
+
+
+def _set_fixed_temperature(temp):
+    config.TEMP_SUMMER = temp
+    config.TEMP_WINTER = temp
+    config.TEMPERATURE = temp
+
+
+def _restore_seasons():
+    config.TEMP_SUMMER = DEFAULT_TEMP_SUMMER
+    config.TEMP_WINTER = DEFAULT_TEMP_WINTER
+
+
 def run_once(temp, seed):
     np.random.seed(seed)
-    config.TEMPERATURE = temp
+    _set_fixed_temperature(temp)
     world = World()
     extinct = False
-    for _ in range(GENERATIONS):
-        world.run_generation()
-        h = world.history
-        if h["herbivore_count"][-1] == 0 or h["carnivore_count"][-1] == 0:
-            extinct = True
-            break
+    try:
+        for _ in range(GENERATIONS):
+            world.run_generation()
+            h = world.history
+            if h["herbivore_count"][-1] == 0 or h["carnivore_count"][-1] == 0:
+                extinct = True
+                break
+    finally:
+        _restore_seasons()
     return world.history, extinct
 
 
@@ -211,7 +230,7 @@ def main():
 
 # =============================================
 # 季節変化モードの実験 (python experiment.py seasons)
-# USE_SEASONS=Trueで100世代走らせ、固定気温(15℃・35℃)と比較する
+# 季節変化(TEMP_SUMMER/WINTERそのまま)で100世代走らせ、固定気温(15℃・35℃)と比較する
 # =============================================
 SEASON_GENERATIONS = 100
 SEASON_SEEDS       = 5
@@ -224,18 +243,19 @@ SEASON_COLORS      = {"季節変化": "#d81b60", "固定15°C": "#388e3c", "固�
 def run_season_once(temp, seed):
     """temp=Noneなら季節変化ON、数値なら固定気温。戻り値: (history, 絶滅したか)"""
     np.random.seed(seed)
-    config.USE_SEASONS = temp is None
     if temp is not None:
-        config.TEMPERATURE = temp
+        _set_fixed_temperature(temp)
     world = World()
     extinct = False
-    for _ in range(SEASON_GENERATIONS):
-        world.run_generation()
-        h = world.history
-        if h["herbivore_count"][-1] == 0 or h["carnivore_count"][-1] == 0:
-            extinct = True
-            break
-    config.USE_SEASONS = False
+    try:
+        for _ in range(SEASON_GENERATIONS):
+            world.run_generation()
+            h = world.history
+            if h["herbivore_count"][-1] == 0 or h["carnivore_count"][-1] == 0:
+                extinct = True
+                break
+    finally:
+        _restore_seasons()
     return world.history, extinct
 
 

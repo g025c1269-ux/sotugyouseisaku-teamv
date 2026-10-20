@@ -383,7 +383,7 @@ def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, 
         (f"世代 {world.generation}", big_font, (255, 255, 255)),
         (f"草食動物: {len(herbs)} 匹", font, (100, 181, 246)),
         (f"肉食動物: {len(carns)} 匹", font, (239, 83, 80)),
-        (f"気温: {config.TEMPERATURE}°C", font, (255, 213, 79)),
+        (f"気温: {config.TEMPERATURE:.1f}°C", font, (255, 213, 79)),
         (mode_text, small_font, (255, 235, 59) if paused else (180, 180, 180)),
         (controls_text, small_font, (140, 140, 140)),
     ]
@@ -552,7 +552,7 @@ def run_with_visualization(world):
                 if mx < GRID_PANEL_SIZE and event.y != 0:
                     renderer.zoom_step(1 if event.y > 0 else -1, (mx, my))
 
-        world.update_temperature()  # 季節変化と世代の巻き戻しに追従
+        world.update_temperature()  # 世代に応じた季節の気温に更新 (←→で世代を戻した場合も追従)
 
         # WASDでカメラ移動 / 追跡モード中は選択個体を画面中央に保つ
         keys = pygame.key.get_pressed()
@@ -701,9 +701,8 @@ def save_result_graph(world):
 # エントリーポイント
 # =============================================
 if __name__ == "__main__":
+    world = World()
     if config.VISUALIZE:
-        from title_screen import show_title_screen
-        if show_title_screen() == "god":
-            run_with_visualization(World())
+        run_with_visualization(world)
     else:
-        run_headless(World())
+        run_headless(world)

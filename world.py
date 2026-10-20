@@ -126,11 +126,10 @@ class World:
     # 1世代分のステップを実行してデータを記録する
     # --------------------------------------------------
     def update_temperature(self):
-        """USE_SEASONS=Trueのときだけ、現在の世代から気温を計算してconfig.TEMPERATUREに反映する"""
-        if config.USE_SEASONS:
-            config.TEMPERATURE = (config.TEMP_SUMMER + config.TEMP_WINTER) / 2 + \
-                (config.TEMP_SUMMER - config.TEMP_WINTER) / 2 * \
-                math.sin(2 * math.pi * self.generation / config.SEASON_CYCLE)
+        """現在の世代から気温を計算してconfig.TEMPERATUREに反映する (TEMP_SUMMER==TEMP_WINTERなら固定気温)"""
+        config.TEMPERATURE = (config.TEMP_SUMMER + config.TEMP_WINTER) / 2 + \
+            (config.TEMP_SUMMER - config.TEMP_WINTER) / 2 * \
+            math.sin(2 * math.pi * self.generation / config.SEASON_CYCLE)
 
     def run_generation(self):
         self.generation += 1

@@ -16,11 +16,10 @@ MAX_FOOD           = 1400   # 食物の上限 (爆発的な増加を防ぐ)
 # --- 環境変数 (実験で変える値) ---
 TEMPERATURE      = 15.0     # 気温 (°C)  ← ここを変えて実験する
 
-# 季節変化 (USE_SEASONS=Trueのとき、世代ごとに気温をsin波で更新する)
+# 季節変化 (常時有効: 世代ごとに気温をsin波で更新する)
 SEASON_CYCLE = 20           # 何世代で1サイクル(春夏秋冬)
 TEMP_SUMMER  = 35.0         # 夏の最高気温
 TEMP_WINTER  = 5.0          # 冬の最低気温
-USE_SEASONS  = False        # Trueで季節変化ON、Falseで固定気温(既存の動作)
 
 FOOD_SPAWN_RATE  = 1.0      # 毎ターン食物が生まれる確率
 FOOD_SPAWN_COUNT = 12       # 1ターンに生まれる食物の個数 (グリッド拡大に合わせてスケール)
