@@ -14,14 +14,16 @@ import matplotlib.pyplot as plt
 import japanize_matplotlib
 import config
 from world import World
+from pixel_art import PixelRenderer, CELL, ZOOM_LEVELS
+import os
 
 
 # =============================================
 # pygame表示まわりの定数
 # =============================================
-GRID_PANEL_SIZE  = 600   # 左側 グリッド描画パネルの一辺(px)
+GRID_PANEL_SIZE  = config.GRID_SIZE * CELL   # 左側 グリッド描画パネルの一辺(px) 8px x 80マス = 640
 INFO_PANEL_WIDTH = 400   # 右側 情報パネルの幅(px)
-WINDOW_HEIGHT    = 600
+WINDOW_HEIGHT    = GRID_PANEL_SIZE
 WINDOW_WIDTH     = GRID_PANEL_SIZE + INFO_PANEL_WIDTH
 
 BG_COLOR   = (13, 17, 23)
@@ -229,28 +231,40 @@ def _draw_bar(screen, pygame, font, x, y, width, height, value, label, color):
 # --------------------------------------------------
 # 右側: 個体アイコンの凡例 (種類の色分けと食物の説明)
 # --------------------------------------------------
-def _draw_legend(screen, pygame, small_font, x, y):
+def _draw_legend(screen, pygame, small_font, x, y, renderer):
     rows = [
-        ((100, 181, 246), "circle",   "青い丸 = 草食動物(色が濃いほど耐寒性が高い)"),
-        ((239, 83, 80),   "triangle", "赤い三角 = 肉食動物(色が濃いほど耐寒性が高い)"),
-        ((46, 204, 64),   "dot",      "緑の点 = 食物"),
+        ("herbivore", "草食動物 (俯瞰では青い点)"),
+        ("carnivore", "肉食動物 (俯瞰では赤い点)"),
+        ("food",      "木の実 = 食物"),
     ]
-    row_h = small_font.get_height()
-    for color, shape, text in rows:
-        icon_cx = x + 6
-        icon_cy = y + row_h // 2
-        if shape == "circle":
-            pygame.draw.circle(screen, color, (icon_cx, icon_cy), 5)
-        elif shape == "triangle":
-            s = 5
-            points = [(icon_cx, icon_cy - s), (icon_cx - s, icon_cy + s), (icon_cx + s, icon_cy + s)]
-            pygame.draw.polygon(screen, color, points)
-        else:
-            pygame.draw.circle(screen, color, (icon_cx, icon_cy), 2)
+    row_h = 18
+    for kind, text in rows:
+        screen.blit(renderer.icon(kind, 16), (x, y))
         label = small_font.render(text, True, TEXT_COLOR)
-        screen.blit(label, (x + 16, y))
-        y += row_h + 2
-    return y + 2
+        screen.blit(label, (x + 22, y + (16 - label.get_height()) // 2))
+        y += row_h
+    y += 2
+    for text in ("見た目 → 遺伝子 (ズームすると見える)",
+                 "角・太い足=山耐性   水色の足・ひれ=川耐性",
+                 "足の長さ=速度   体の大きさ=代謝",
+                 "白くてもこもこ=耐寒性"):
+        label = small_font.render(text, True, (150, 155, 160))
+        screen.blit(label, (x, y))
+        y += label.get_height() + 1
+    return y + 4
+
+
+# --------------------------------------------------
+# 左上: FPS・ズーム倍率・操作ヒント (重くなったときの切り分け用にFPSを常時表示)
+# --------------------------------------------------
+def _draw_view_hud(screen, pygame, small_font, renderer, clock, follow):
+    text = (f"FPS {clock.get_fps():.0f} | x{renderer.zoom // CELL} | "
+            f"ホイール:ズーム ドラッグ:移動 F:追跡{'中' if follow else ''}")
+    surf = small_font.render(text, True, (255, 255, 255))
+    shade = pygame.Surface((surf.get_width() + 8, surf.get_height() + 4), pygame.SRCALPHA)
+    shade.fill((0, 0, 0, 150))
+    screen.blit(shade, (6, 6))
+    screen.blit(surf, (10, 8))
 
 
 # --------------------------------------------------
@@ -309,13 +323,14 @@ def _draw_average_panel(screen, pygame, font, big_font, small_font, herbs, carns
 # --------------------------------------------------
 # 右側: 選択した個体の詳細パネル
 # --------------------------------------------------
-def _draw_selected_panel(screen, pygame, font, big_font, small_font, world, x, y, bar_w, org):
+def _draw_selected_panel(screen, pygame, font, big_font, small_font, world, x, y, bar_w, org, renderer):
     type_label = "草食動物" if org.org_type == "herbivore" else "肉食動物"
     color = (100, 181, 246) if org.org_type == "herbivore" else (239, 83, 80)
 
     title = big_font.render(f"個体の詳細: {type_label}", True, color)
     screen.blit(title, (x, y))
     y += title.get_height() + 6
+    screen.blit(renderer.portrait(org, 64), (x + bar_w - 64, y))   # 実際の見た目の肖像
 
     zone = world.get_zone(org.x, org.y)
     info_lines = [
@@ -343,7 +358,7 @@ def _draw_selected_panel(screen, pygame, font, big_font, small_font, world, x, y
 # 右側: 世代・個体数・気温・モード・速度スライダー・凡例・形質パネル全体
 # 戻り値: 速度スライダーのつまみドラッグ判定用track_rect (画面座標)
 # --------------------------------------------------
-def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, mode, slider_t, selected_org):
+def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, mode, slider_t, selected_org, renderer):
     x0 = GRID_PANEL_SIZE
     pygame.draw.rect(screen, PANEL_BG, (x0, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT))
 
@@ -368,8 +383,7 @@ def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, 
         (f"世代 {world.generation}", big_font, (255, 255, 255)),
         (f"草食動物: {len(herbs)} 匹", font, (100, 181, 246)),
         (f"肉食動物: {len(carns)} 匹", font, (239, 83, 80)),
-        (f"気温: {config.TEMPERATURE:.1f}°C" + (" (季節変化)" if config.USE_SEASONS else ""),
-         font, (255, 213, 79)),
+        (f"気温: {config.TEMPERATURE}°C", font, (255, 213, 79)),
         (mode_text, small_font, (255, 235, 59) if paused else (180, 180, 180)),
         (controls_text, small_font, (140, 140, 140)),
     ]
@@ -383,10 +397,10 @@ def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, 
     sps = _slider_t_to_sps(slider_t)
     y, slider_track_rect = _draw_speed_slider(screen, pygame, small_font, x, y, bar_w, slider_t, sps)
 
-    y = _draw_legend(screen, pygame, small_font, x, y)
+    y = _draw_legend(screen, pygame, small_font, x, y, renderer)
 
     if selected_org is not None and selected_org.alive and selected_org in world.organisms:
-        _draw_selected_panel(screen, pygame, font, big_font, small_font, world, x, y, bar_w, selected_org)
+        _draw_selected_panel(screen, pygame, font, big_font, small_font, world, x, y, bar_w, selected_org, renderer)
     else:
         _draw_average_panel(screen, pygame, font, big_font, small_font, herbs, carns, x, y, bar_w)
 
@@ -397,6 +411,10 @@ def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, 
 # 日本語対応フォントを探す
 # --------------------------------------------------
 def _load_fonts(pygame):
+    # fonts/DotGothic16-Regular.ttf を置くとドット絵フォントになる (無ければ従来のフォント)
+    dot = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "DotGothic16-Regular.ttf")
+    if os.path.exists(dot):
+        return pygame.font.Font(dot, 14), pygame.font.Font(dot, 20), pygame.font.Font(dot, 12)
     path = pygame.font.match_font("meiryo,msgothic,yugothic,notosanscjkjp,arial")
     if path is None:
         path = pygame.font.get_default_font()
@@ -435,7 +453,7 @@ def run_with_visualization(world):
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     clock = pygame.time.Clock()
     font, big_font, small_font = _load_fonts(pygame)
-    terrain_surface = _build_terrain_surface(pygame, world, small_font)
+    renderer = PixelRenderer(pygame, world, small_font)
 
     world.generation += 1  # 1世代目を開始
     step_in_gen = 0
@@ -446,6 +464,10 @@ def run_with_visualization(world):
     mode = "normal"         # "normal" または "per_gen" (1世代ごとモード)
     slider_t = _default_slider_t()
     dragging_slider = False
+    drag_start = None       # 盤面ドラッグ(移動)の開始位置
+    drag_last = None
+    drag_moved = False
+    follow = False          # 選択中の個体を追跡するか
     accumulator = 0.0
     selected_org = None
     slider_track_rect = pygame.Rect(0, 0, 0, 0)
@@ -463,6 +485,10 @@ def run_with_visualization(world):
                     paused = not paused
                 elif event.key == pygame.K_ESCAPE:
                     running = False
+                elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3):
+                    renderer.set_zoom(ZOOM_LEVELS[event.key - pygame.K_1])
+                elif event.key == pygame.K_f:
+                    follow = not follow and selected_org is not None
                 elif event.key == pygame.K_m:
                     mode = "per_gen" if mode == "normal" else "normal"
                     if mode == "per_gen":
@@ -494,16 +520,49 @@ def run_with_visualization(world):
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mx, my = event.pos
                 if mx < GRID_PANEL_SIZE:
-                    selected_org = _find_nearest_organism(world, mx, my)
+                    hit = renderer.minimap_hit(mx, my)
+                    if hit is not None:                      # ミニマップをクリック → その場所へ移動
+                        renderer.center_on_cell(hit[0], hit[1])
+                        follow = False
+                    else:                                    # 盤面: クリックなら選択 / 動かしたら移動
+                        drag_start, drag_last, drag_moved = (mx, my), (mx, my), False
                 elif slider_track_rect.collidepoint(mx, my):
                     dragging_slider = True
                     slider_t = _slider_pos_to_t(mx, slider_track_rect)
-            elif event.type == pygame.MOUSEMOTION and dragging_slider:
-                slider_t = _slider_pos_to_t(event.pos[0], slider_track_rect)
+            elif event.type == pygame.MOUSEMOTION:
+                if dragging_slider:
+                    slider_t = _slider_pos_to_t(event.pos[0], slider_track_rect)
+                elif drag_start is not None:
+                    mx, my = event.pos
+                    if abs(mx - drag_start[0]) + abs(my - drag_start[1]) >= 5:
+                        drag_moved = True
+                    if drag_moved:
+                        renderer.pan(drag_last[0] - mx, drag_last[1] - my)
+                        follow = False
+                    drag_last = (mx, my)
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                if drag_start is not None and not drag_moved:
+                    selected_org = renderer.find_org(world, drag_start[0], drag_start[1])
+                    if selected_org is None:
+                        follow = False
+                drag_start = None
                 dragging_slider = False
+            elif event.type == pygame.MOUSEWHEEL:
+                mx, my = pygame.mouse.get_pos()
+                if mx < GRID_PANEL_SIZE and event.y != 0:
+                    renderer.zoom_step(1 if event.y > 0 else -1, (mx, my))
 
-        world.update_temperature()  # 季節変化モード時は世代に応じた気温に更新 (←→で世代を戻した場合も追従)
+        world.update_temperature()  # 季節変化と世代の巻き戻しに追従
+
+        # WASDでカメラ移動 / 追跡モード中は選択個体を画面中央に保つ
+        keys = pygame.key.get_pressed()
+        pdx = (int(keys[pygame.K_d]) - int(keys[pygame.K_a])) * 10
+        pdy = (int(keys[pygame.K_s]) - int(keys[pygame.K_w])) * 10
+        if pdx or pdy:
+            renderer.pan(pdx, pdy)
+            follow = False
+        if follow and selected_org is not None and selected_org.alive and selected_org in world.organisms:
+            renderer.center_on_org(selected_org)
 
         if running and not paused and not done:
             accumulator += clock.get_time() / 1000.0
@@ -522,9 +581,10 @@ def run_with_visualization(world):
                         break
 
         screen.fill(BG_COLOR)
-        _draw_grid(screen, pygame, world, terrain_surface, selected_org)
+        renderer.draw(screen, world, selected_org)
+        _draw_view_hud(screen, pygame, small_font, renderer, clock, follow)
         slider_track_rect = _draw_info_panel(
-            screen, pygame, font, big_font, small_font, world, paused, mode, slider_t, selected_org
+            screen, pygame, font, big_font, small_font, world, paused, mode, slider_t, selected_org, renderer
         )
 
         if extinct:
