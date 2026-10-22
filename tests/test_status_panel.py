@@ -16,6 +16,7 @@ import pygame
 import config
 import main
 from world import World
+from pixel_art import CELL
 from status_panel import StatusPanel
 
 
@@ -38,7 +39,7 @@ class StatusPanelTests(unittest.TestCase):
         panel = StatusPanel((640, 0, 400, 640))
         panel.draw(screen, org, world)
         old = panel.signature
-        world.run_generation()
+        world.step()
         survivor = next(o for o in world.organisms if o.alive)
         panel.draw(screen, survivor, world)
         self.assertNotEqual(old, panel.signature)
@@ -66,7 +67,7 @@ class StatusPanelTests(unittest.TestCase):
 
         def select(species, renderer):
             for org in world.organisms:
-                pos = (org.y * 8 + 4, org.x * 8 + 4)
+                pos = (org.y * CELL + CELL // 2, org.x * CELL + CELL // 2)
                 if org.org_type == species and renderer.find_org(world, *pos) is org:
                     click(pos)
                     return

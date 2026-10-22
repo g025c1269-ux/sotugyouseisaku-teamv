@@ -73,4 +73,6 @@ GitHubの画像ページで表示できない場合は、Raw表示またはダ�
 - [長所と短所・注意点](12_status_strengths.png)
 - [肉食動物・現在値と評価](13_status_carnivore.png)
 
-[設計・閾値・検証手順](../docs/status_explainer.md) / [全4,374件の解説CSV（ZIP）](../docs/status_combinations.zip)
+[設計・閾値・検証手順](../docs/status_explainer.md) / [両方式・全8,748件の解説CSV（ZIP）](../docs/status_combinations.zip)
+
+上記10〜13の画像は、最新の島・海・NN・寿命に対応した解説画面で再撮影しています。行動方式と未使用能力も表示します。
