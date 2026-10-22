@@ -234,7 +234,7 @@ def _draw_bar(screen, pygame, font, x, y, width, height, value, label, color):
 # --------------------------------------------------
 def _draw_legend(screen, pygame, small_font, x, y, renderer):
     rows = [
-        ("herbivore", "草食動物 (俯瞰では青い点)"),
+        ("herbivore", "草食動物 (俯瞰では白い点)"),
         ("carnivore", "肉食動物 (俯瞰では赤い点)"),
         ("food",      "木の実 = 食物"),
     ]
