@@ -22,8 +22,8 @@ import random
 import numpy as np
 import config
 
-CELL = 8                    # 地形タイルの基本ピクセル数 (俯瞰の1マス)
-ZOOM_LEVELS = (8, 16, 32)   # 1マスのピクセル数
+CELL = 4                    # 地形タイルの基本ピクセル数 (俯瞰の1マス)。160マス x 4px = 640px
+ZOOM_LEVELS = (4, 16, 32)   # 1マスのピクセル数 (4=俯瞰, 16=標準, 32=接近)
 SPRITE = 16                 # スプライトの基本サイズ
 
 # ---------------------------------------------
@@ -34,8 +34,9 @@ TERRAIN_PALETTE = {
     "desert":    {"base": (232, 201, 122), "dark": (210, 176, 98), "light": (245, 226, 160)},
     "mountain":  {"base": (140, 110, 90),  "dark": (100, 76, 60),  "light": (176, 150, 128)},
     "river":     {"base": (60, 140, 230),  "dark": (40, 100, 190), "light": (130, 200, 255)},
+    "sea":       {"base": (20, 60, 140),   "dark": (12, 40, 105),  "light": (60, 110, 190)},   # 川より濃い青
 }
-ZONE_NAMES_JA = {"grassland": "草原", "desert": "砂漠", "mountain": "山", "river": "川"}
+ZONE_NAMES_JA = {"grassland": "草原", "desert": "砂漠", "mountain": "山", "river": "川", "sea": "海"}
 
 BERRY = [
     "....g...",
@@ -221,6 +222,7 @@ class PixelRenderer:
         self._tint_surface = None
         self._snow = None
         self._rng = random.Random(12345)
+        self.show_food = True      # 食物(木の実)を描くか (Vキーで切り替え)
 
         # カメラ
         self.zoom = ZOOM_LEVELS[0]
@@ -231,8 +233,8 @@ class PixelRenderer:
         self._labels = self._build_labels(world)
         self._berry_base = self._make_surface(BERRY, BERRY_PALETTE)
 
-        # ミニマップ (1マス2px)
-        self.mm_scale = 2
+        # ミニマップ (1マス1px)
+        self.mm_scale = 1
         self.mm_size = self.grid * self.mm_scale
         self.mm_rect = pygame.Rect(8, self.view - self.mm_size - 8, self.mm_size, self.mm_size)
         self._mm_base = pygame.transform.scale(self.terrain[0], (self.mm_size, self.mm_size))
@@ -480,7 +482,8 @@ class PixelRenderer:
     def _berry(self, s):
         b = self._berry_cache.get(s)
         if b is None:
-            b = self.pg.transform.scale(self._berry_base, (CELL * s, CELL * s)) if s != 1 else self._berry_base
+            size = (CELL * s if s != 1 else self._berry_base.get_width()) - 1    # 木の実は従来より1px小さく描く
+            b = self.pg.transform.scale(self._berry_base, (size, size))
             self._berry_cache[s] = b
         return b
 
@@ -613,9 +616,10 @@ class PixelRenderer:
         r1 = min(n - 1, (self.off_y + view - 1) // z)
 
         # 食物 (画面内だけ)
-        berry = self._berry(z // CELL)
-        for (fx, fy) in np.argwhere(world.food_grid[r0:r1 + 1, c0:c1 + 1]):
-            screen.blit(berry, ((c0 + int(fy)) * z - self.off_x, (r0 + int(fx)) * z - self.off_y))
+        if self.show_food:
+            berry = self._berry(z // CELL)
+            for (fx, fy) in np.argwhere(world.food_grid[r0:r1 + 1, c0:c1 + 1]):
+                screen.blit(berry, ((c0 + int(fy)) * z - self.off_x, (r0 + int(fx)) * z - self.off_y))
 
         # 個体 (画面内だけ)
         visible = [o for o in world.organisms if r0 <= o.x <= r1 and c0 <= o.y <= c1]
@@ -626,12 +630,10 @@ class PixelRenderer:
             carns = [o for o in visible if o.org_type != "herbivore"]
             for o in herbs:
                 sx, sy = o.y * z - self.off_x, o.x * z - self.off_y
-                screen.fill(DOT_EDGE, (sx + 1, sy + 1, 5, 5))
-                screen.fill(DOT_HERB, (sx + 2, sy + 2, 3, 3))
+                screen.fill(DOT_HERB, (sx, sy, 3, 3))
             for o in carns:
                 sx, sy = o.y * z - self.off_x, o.x * z - self.off_y
-                screen.fill(DOT_EDGE, (sx, sy, 7, 7))
-                screen.fill(DOT_CARN, (sx + 1, sy + 1, 5, 5))
+                screen.fill(DOT_CARN, (sx, sy, 4, 4))
         else:
             # --- 標準/接近: 遺伝子つきのドット絵 (手前の行ほど後から描く) ---
             k = z // SPRITE

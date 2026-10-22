@@ -35,6 +35,7 @@ TERRAIN_COLORS = {
     "desert":    (0xe8, 0xc9, 0x7a),
     "mountain":  (0x8b, 0x5e, 0x3c),
     "river":     (0x4a, 0x9e, 0xff),
+    "sea":       (0x14, 0x3c, 0x8c),
 }
 
 # 地形のノイズ・波紋テクスチャに使う色
@@ -56,7 +57,7 @@ TRAIT_FIELDS = [
     ("川耐性", "river_tolerance"),
 ]
 
-ZONE_NAMES_JA = {"grassland": "草原", "desert": "砂漠", "mountain": "山", "river": "川"}
+ZONE_NAMES_JA = {"grassland": "草原", "desert": "砂漠", "mountain": "山", "river": "川", "sea": "海"}
 
 # 速度スライダー: 左端(低速)は1ステップ0.5秒、右端(高速)は旧5倍速相当(60fps中5ステップ/フレーム=300ステップ/秒)
 SPEED_MIN_SPS = 2.0
@@ -259,7 +260,8 @@ def _draw_legend(screen, pygame, small_font, x, y, renderer):
 # --------------------------------------------------
 def _draw_view_hud(screen, pygame, small_font, renderer, clock, follow):
     text = (f"FPS {clock.get_fps():.0f} | x{renderer.zoom // CELL} | "
-            f"ホイール:ズーム ドラッグ:移動 F:追跡{'中' if follow else ''}")
+            f"ホイール:ズーム ドラッグ:移動 F:追跡{'中' if follow else ''} | "
+            f"V:食料{'表示' if renderer.show_food else '非表示'}")
     surf = small_font.render(text, True, (255, 255, 255))
     shade = pygame.Surface((surf.get_width() + 8, surf.get_height() + 4), pygame.SRCALPHA)
     shade.fill((0, 0, 0, 150))
@@ -350,7 +352,7 @@ def _draw_selected_panel(screen, pygame, font, big_font, small_font, world, x, y
         y = _draw_bar(screen, pygame, small_font, x, y, bar_w, bar_h, org.genes[key], label, color) + 2
 
     y += 4
-    hint = small_font.render("E:能力解説 / 何もない場所をクリックすると平均表示", True, (140, 140, 140))
+    hint = small_font.render("何もない場所をクリックすると平均表示に戻ります", True, (140, 140, 140))
     screen.blit(hint, (x, y))
 
 
@@ -447,7 +449,6 @@ def _step_simulation(world, step_in_gen, extinct, done):
 # =============================================
 def run_with_visualization(world):
     import pygame
-    from status_panel import StatusPanel
 
     pygame.init()
     pygame.display.set_caption("生態系進化シミュレーション")
@@ -455,7 +456,6 @@ def run_with_visualization(world):
     clock = pygame.time.Clock()
     font, big_font, small_font = _load_fonts(pygame)
     renderer = PixelRenderer(pygame, world, small_font)
-    status_panel = StatusPanel((GRID_PANEL_SIZE, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT))
 
     world.generation += 1  # 1世代目を開始
     step_in_gen = 0
@@ -480,8 +480,6 @@ def run_with_visualization(world):
 
     while running:
         for event in pygame.event.get():
-            if status_panel.handle_event(event, selected_org):
-                continue
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
@@ -491,6 +489,8 @@ def run_with_visualization(world):
                     running = False
                 elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3):
                     renderer.set_zoom(ZOOM_LEVELS[event.key - pygame.K_1])
+                elif event.key == pygame.K_v:
+                    renderer.show_food = not renderer.show_food
                 elif event.key == pygame.K_f:
                     follow = not follow and selected_org is not None
                 elif event.key == pygame.K_m:
@@ -602,7 +602,6 @@ def run_with_visualization(world):
             pygame.draw.rect(screen, (0, 0, 0), rect.inflate(20, 16))
             screen.blit(msg, rect)
 
-        status_panel.draw(screen, selected_org, world)
         pygame.display.flip()
         clock.tick(60)
 

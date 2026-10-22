@@ -6,8 +6,57 @@ import numpy as np
 import config
 
 
+# ゾーンをNN入力用の数値に変換する
+ZONE_INPUT = {"grassland": 0.0, "river": 0.33, "desert": 0.67, "mountain": 1.0}
+
+# NNの出力(6つ)と対応する行動。0〜3は移動方向(dx, dy)。x=行方向、y=列方向
+NN_MOVES = [(-1, 0), (1, 0), (0, -1), (0, 1)]   # 上 / 下 / 左 / 右
+NN_IDLE, NN_REPRODUCE = 4, 5
+CARN_HERB_RATIO_LIMIT = 0.3   # 肉食/草食比がこれを超えると肉食は繁殖できない
+
+
+# =============================================
+# ニューラルネットワーク (入力8 → 隠れ8(ReLU) → 出力6(softmax))
+# 重みは-1〜1の一様乱数で初期化し、クリップはしない
+# =============================================
+class NeuralNetwork:
+    N_IN, N_HIDDEN, N_OUT = 8, 8, 6
+
+    def __init__(self, params=None):
+        if params is None:
+            self.w1 = np.random.uniform(-1, 1, (self.N_IN, self.N_HIDDEN))
+            self.b1 = np.random.uniform(-1, 1, self.N_HIDDEN)
+            self.w2 = np.random.uniform(-1, 1, (self.N_HIDDEN, self.N_OUT))
+            self.b2 = np.random.uniform(-1, 1, self.N_OUT)
+        else:
+            self.w1, self.b1, self.w2, self.b2 = (p.copy() for p in params)
+
+    def params(self):
+        return (self.w1, self.b1, self.w2, self.b2)
+
+    def forward(self, inputs):
+        h = np.maximum(0.0, inputs @ self.w1 + self.b1)
+        z = h @ self.w2 + self.b2
+        e = np.exp(z - z.max())
+        return e / e.sum()
+
+    # 交叉: 重み1つ1つについて、両親のどちらかを50%の確率で選ぶ (partnerなしなら親のコピー)
+    # 突然変異: 各重みがMUTATION_RATEの確率で、標準偏差MUTATION_STRENGTHの正規ノイズを加算 (クリップなし)
+    @staticmethod
+    def offspring(parent, partner=None):
+        child = NeuralNetwork(parent.params())
+        if partner is not None:
+            for mine, theirs in zip(child.params(), partner.params()):
+                take_partner = np.random.random(mine.shape) < 0.5
+                mine[take_partner] = theirs[take_partner]
+        for p in child.params():
+            mutate = np.random.random(p.shape) < config.MUTATION_RATE
+            p += mutate * np.random.normal(0, config.MUTATION_STRENGTH, p.shape)
+        return child
+
+
 class Organism:
-    def __init__(self, x, y, org_type="herbivore", genes=None):
+    def __init__(self, x, y, org_type="herbivore", genes=None, brain=None):
         self.x = x
         self.y = y
         self.org_type = org_type
@@ -36,6 +85,11 @@ class Organism:
             self.max_energy = config.CARNIVORE_MAX_ENERGY * capacity_factor
             self.energy     = min(config.CARNIVORE_INITIAL_ENERGY, self.max_energy)
 
+        # ニューロエボリューション用のNN (既存のgenesとは別に管理する)
+        self.brain = None
+        if config.USE_NEUROEVOLUTION:
+            self.brain = brain if brain is not None else NeuralNetwork()
+
     # --------------------------------------------------
     # 行動メインループ
     # --------------------------------------------------
@@ -43,6 +97,9 @@ class Organism:
         if not self.alive:
             return
         self.age += 1
+        if self.age > config.MAX_AGE:
+            self.alive = False
+            return
 
         temp_penalty = self._calc_temp_penalty(world)
         # 基本コスト (じっとしていても消費する分) にはmetabolismのみが影響する。
@@ -88,6 +145,8 @@ class Organism:
     # 行動選択
     # --------------------------------------------------
     def _decide_action(self, world):
+        if config.USE_NEUROEVOLUTION:
+            return self._decide_action_nn(world)
         energy_ratio = self.energy / self.max_energy
         scores = {}
         targets = {}
@@ -127,6 +186,59 @@ class Organism:
         return best, targets.get(best)
 
     # --------------------------------------------------
+    # NNによる行動選択 (ルールベースの_decide_actionの代わり)
+    # 入力: 最近の食物の相対位置(2) / 最近の天敵(草食)または獲物(肉食)の相対位置(2) /
+    #       エネルギー比率 / ゾーン / 気温 / 年齢  (相対位置は視野半径で割った値。いなければ0)
+    # 出力softmaxの確率に従って 上/下/左/右/待機/繁殖 を選ぶ
+    # --------------------------------------------------
+    def _decide_action_nn(self, world):
+        if self.org_type == "herbivore":
+            food = world.get_nearest_food(self.x, self.y, radius=4)
+            other = world.get_nearest_carnivore(self.x, self.y, radius=5)
+            food_r, other_r = 4.0, 5.0
+        else:
+            food = None   # 肉食動物は食物を食べないので入力は常に0
+            other = world.get_nearest_herbivore(self.x, self.y, radius=5)
+            food_r, other_r = 4.0, 5.0
+
+        inputs = np.zeros(NeuralNetwork.N_IN)
+        if food:
+            inputs[0] = (food[0] - self.x) / food_r
+            inputs[1] = (food[1] - self.y) / food_r
+        if other:
+            inputs[2] = (other.x - self.x) / other_r
+            inputs[3] = (other.y - self.y) / other_r
+        inputs[4] = self.energy / self.max_energy
+        inputs[5] = ZONE_INPUT[world.get_zone(self.x, self.y)]
+        inputs[6] = config.TEMPERATURE / 40.0
+        inputs[7] = min(self.age / 100.0, 1.0)
+
+        probs = self.brain.forward(inputs)
+        # 繁殖はエネルギーが閾値以上のときだけ可能 (足りないときは選べない)
+        if self.energy < self.max_energy * 0.8:
+            probs = probs.copy()
+            probs[NN_REPRODUCE] = 0.0
+            probs /= probs.sum()
+        choice = int(np.random.choice(NeuralNetwork.N_OUT, p=probs))
+
+        if choice < 4:
+            return "move", NN_MOVES[choice]
+        if choice == NN_REPRODUCE:
+            if self.age < config.MIN_REPRODUCE_AGE:
+                return "idle", None
+            if self.org_type == "carnivore":
+                # 密度抑制: グリッド全体の肉食/草食比が0.3を超えたら繁殖スコアは0 (繁殖しない)
+                if world.get_carn_herb_ratio() > CARN_HERB_RATIO_LIMIT:
+                    return "idle", None
+                # ルールベースと同じ、近くの草食が少ないほど肉食が繁殖しにくくなる抑制
+                nearby = world.count_nearby_herbivores(self.x, self.y, radius=5)
+                prey_ratio = 0.3 + 0.7 * min(nearby / 8.0, 1.0)
+                if np.random.random() >= prey_ratio:
+                    return "idle", None
+            return "reproduce", None
+        return "idle", None
+
+    # --------------------------------------------------
     # 行動の実行
     # --------------------------------------------------
     def _execute_action(self, action, target, world):
@@ -135,6 +247,7 @@ class Organism:
             # 天敵と反対方向に逃げる
             if target:
                 steps = self._movement_steps()
+                blocked = 0
                 cost  = self._move_energy_cost(world)
                 for _ in range(steps):
                     dx = int(np.sign(self.x - target.x))
@@ -144,9 +257,9 @@ class Organism:
                         dx = np.random.randint(0, 2) * 2 - 1
                     if dy == 0:
                         dy = np.random.randint(0, 2) * 2 - 1
-                    self.x = max(0, min(config.GRID_SIZE - 1, self.x + dx))
-                    self.y = max(0, min(config.GRID_SIZE - 1, self.y + dy))
-                self.energy -= cost * steps
+                    if not self._step(world, dx, dy):   # 移動先が海ならその移動はキャンセル
+                        blocked += 1
+                self.energy -= cost * (steps - blocked)
 
         elif action == "move_to_food":
             if target:
@@ -170,13 +283,33 @@ class Organism:
 
         elif action == "move_random":
             steps = self._movement_steps()
+            blocked = 0
             cost  = self._move_energy_cost(world)
             for _ in range(steps):
                 dx = np.random.randint(-1, 2)
                 dy = np.random.randint(-1, 2)
-                self.x = max(0, min(config.GRID_SIZE - 1, self.x + dx))
-                self.y = max(0, min(config.GRID_SIZE - 1, self.y + dy))
-            self.energy -= cost * steps
+                if not self._step(world, dx, dy):   # 移動先が海ならその移動はキャンセル
+                    blocked += 1
+            self.energy -= cost * (steps - blocked)
+
+        elif action == "move":
+            # NN用の方向移動: 動いた先で、草食は食物を食べ、肉食は隣接する草食を捕食する
+            dx, dy = target
+            steps = self._movement_steps()
+            blocked = 0
+            cost  = self._move_energy_cost(world)
+            for _ in range(steps):
+                if not self._step(world, dx, dy):   # 移動先が海ならその移動はキャンセル
+                    blocked += 1
+            self.energy -= cost * (steps - blocked)
+            if self.org_type == "herbivore":
+                if world.consume_food(self.x, self.y):
+                    self.energy = min(self.energy + config.HERBIVORE_ENERGY_FROM_FOOD, self.max_energy)
+            else:
+                prey = world.get_nearest_herbivore(self.x, self.y, radius=1)
+                if prey and prey.alive:
+                    prey.alive = False
+                    self.energy = min(self.energy + config.CARNIVORE_ENERGY_FROM_PREY, self.max_energy)
 
         elif action == "reproduce":
             world.spawn_offspring(self)
@@ -185,19 +318,31 @@ class Organism:
             self.energy -= cost
 
     # --------------------------------------------------
+    # 1マス移動する。移動先が海(sea)なら移動をキャンセルしてFalseを返す (エネルギーコストなし)
+    # --------------------------------------------------
+    def _step(self, world, dx, dy):
+        nx = max(0, min(config.GRID_SIZE - 1, self.x + dx))
+        ny = max(0, min(config.GRID_SIZE - 1, self.y + dy))
+        if world.get_zone(nx, ny) == "sea":
+            return False
+        self.x, self.y = nx, ny
+        return True
+
+    # --------------------------------------------------
     # 目標座標に近づく (speedが速い個体は1ターンに2マス進む)
     # --------------------------------------------------
     def _move_toward(self, target_x, target_y, world):
         steps = self._movement_steps()
+        blocked = 0
         cost  = self._move_energy_cost(world)
         for _ in range(steps):
             dx = int(np.sign(target_x - self.x))
             dy = int(np.sign(target_y - self.y))
             if dx == 0 and dy == 0:
                 break
-            self.x = max(0, min(config.GRID_SIZE - 1, self.x + dx))
-            self.y = max(0, min(config.GRID_SIZE - 1, self.y + dy))
-        self.energy -= cost * steps
+            if not self._step(world, dx, dy):   # 移動先が海ならその移動はキャンセル
+                blocked += 1
+        self.energy -= cost * (steps - blocked)
 
     # --------------------------------------------------
     # speed遺伝子に応じた1ターンの移動マス数
@@ -242,3 +387,9 @@ class Organism:
                 child_genes[key] += np.random.normal(0, config.MUTATION_STRENGTH)
                 child_genes[key] = float(np.clip(child_genes[key], 0.0, 1.0))
         return child_genes
+
+    # --------------------------------------------------
+    # 子個体のNN生成 (交叉+突然変異。create_offspring_genesと同様の仕組み)
+    # --------------------------------------------------
+    def create_offspring_brain(self, partner=None):
+        return NeuralNetwork.offspring(self.brain, partner.brain if partner is not None else None)
