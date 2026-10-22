@@ -63,3 +63,14 @@ GitHubの画像ページで表示できない場合は、Raw表示またはダ�
 - [タイトル画面](07_current_title.png)
 - [起動直後の俯瞰画面](08_current_overview.png)
 - [第2世代・2倍ズーム画面](09_current_zoom.png)
+
+## ステータス組み合わせ解説
+
+生物を選択すると右側に数値・3段階評価・総合解説・長所・注意点を表示します。パネル上でホイールスクロール、「閉じる」またはEで従来表示に戻ります。
+
+- [草食動物・現在値と評価](10_status_herbivore.png)
+- [組み合わせ総合解説](11_status_summary.png)
+- [長所と短所・注意点](12_status_strengths.png)
+- [肉食動物・現在値と評価](13_status_carnivore.png)
+
+[設計・閾値・検証手順](../docs/status_explainer.md) / [全4,374件の解説CSV（ZIP）](../docs/status_combinations.zip)
