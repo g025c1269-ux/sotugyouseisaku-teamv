@@ -11,6 +11,7 @@ import config
 from organism import Organism
 from world import World
 from status_explainer import StatusExplainer, LEVELS, DATA_PATH
+from navigator_explainer import NavigatorExplainer
 
 
 class ExplainerTests(unittest.TestCase):
@@ -136,6 +137,7 @@ class ExplainerTests(unittest.TestCase):
                 def run(with_explanations):
                     np.random.seed(1000)
                     w = World()
+                    navigator = NavigatorExplainer()
                     for _ in range(10):
                         w.step()
                         if with_explanations:
@@ -143,6 +145,8 @@ class ExplainerTests(unittest.TestCase):
                             for species in ('herbivore', 'carnivore'):
                                 org = next(o for o in w.organisms if o.org_type == species)
                                 self.explainer.explain_organism(org, w)
+                                navigator.population(w.organisms, species, config.TEMPERATURE)
+                                navigator.individual(org, config.TEMPERATURE)
                     return w
                 baseline = run(False)
                 explained = run(True)

@@ -449,7 +449,7 @@ def _step_simulation(world, step_in_gen, extinct, done):
 # =============================================
 def run_with_visualization(world):
     import pygame
-    from status_panel import StatusPanel
+    from navigator_panel import NavigatorPanel
 
     pygame.init()
     pygame.display.set_caption("生態系進化シミュレーション")
@@ -457,7 +457,7 @@ def run_with_visualization(world):
     clock = pygame.time.Clock()
     font, big_font, small_font = _load_fonts(pygame)
     renderer = PixelRenderer(pygame, world, small_font)
-    status_panel = StatusPanel((GRID_PANEL_SIZE, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT))
+    status_panel = NavigatorPanel((GRID_PANEL_SIZE, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT))
 
     world.generation += 1  # 1世代目を開始
     step_in_gen = 0

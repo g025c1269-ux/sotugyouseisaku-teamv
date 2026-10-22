@@ -86,47 +86,71 @@ class StatusPanelTests(unittest.TestCase):
             panel = scope['status_panel']
             selected = scope['selected_org']
             if stage == 0:
+                self.assertTrue(panel.open)
+                self.assertEqual(panel.individual['profile'], 'none')
+                self.assertTrue(panel.cards['herbivore']['count'] > 0)
+                self.assertTrue(panel.cards['carnivore']['count'] > 0)
+                save('14_navigator_overview.png')
                 key(pygame.K_m)
                 select('herbivore', scope['renderer'])
                 stage = 1
             elif stage == 1:
                 self.assertTrue(scope['paused'] and panel.open)
                 self.assertEqual(selected.org_type, 'herbivore')
-                save('10_status_herbivore.png')
-                pygame.event.post(pygame.event.Event(pygame.MOUSEWHEEL, y=-8, x=0))
+                self.assertLessEqual(len(panel.individual['text']), 160)
+                save('15_navigator_selected.png')
+                key(pygame.K_TAB)
                 stage = 2
             elif stage == 2:
-                self.assertGreater(panel.scroll, 0)
-                save('11_status_summary.png')
-                pygame.event.post(pygame.event.Event(pygame.MOUSEWHEEL, y=-100, x=0))
+                self.assertEqual(panel.view, 'detail')
+                save('10_status_herbivore.png')
+                pygame.event.post(pygame.event.Event(pygame.MOUSEWHEEL, y=-8, x=0))
                 stage = 3
             elif stage == 3:
-                self.assertEqual(panel.scroll, panel.max_scroll)
-                save('12_status_strengths.png')
-                click(panel.close_rect.center)
+                self.assertGreater(panel.detail.scroll, 0)
+                save('11_status_summary.png')
+                pygame.event.post(pygame.event.Event(pygame.MOUSEWHEEL, y=-100, x=0))
                 stage = 4
             elif stage == 4:
-                self.assertFalse(panel.open)
-                key(pygame.K_e)
+                self.assertEqual(panel.detail.scroll, panel.detail.max_scroll)
+                save('12_status_strengths.png')
+                click(panel.detail.close_rect.center)
                 stage = 5
             elif stage == 5:
+                self.assertEqual(panel.view, 'overview')
                 self.assertTrue(panel.open)
-                select('carnivore', scope['renderer'])
+                key(pygame.K_e)
                 stage = 6
             elif stage == 6:
+                self.assertFalse(panel.open)
+                key(pygame.K_v)
+                key(pygame.K_e)
+                stage = 7
+            elif stage == 7:
                 self.assertTrue(panel.open)
-                self.assertEqual(panel.scroll, 0)
+                self.assertFalse(scope['renderer'].show_food)
+                select('carnivore', scope['renderer'])
+                stage = 8
+            elif stage == 8:
+                self.assertEqual(panel.view, 'overview')
                 self.assertEqual(selected.org_type, 'carnivore')
+                save('16_navigator_carnivore.png')
+                key(pygame.K_TAB)
+                stage = 9
+            elif stage == 9:
+                self.assertEqual(panel.view, 'detail')
+                self.assertEqual(panel.detail.scroll, 0)
                 save('13_status_carnivore.png')
                 initial_age = selected.age
+                key(pygame.K_TAB)
                 key(pygame.K_SPACE)
-                stage = 7
-            elif stage == 7 and selected.age > initial_age:
-                self.assertEqual(panel.signature[1], selected.energy)
-                self.assertEqual(panel.signature[3], selected.age)
+                stage = 10
+            elif stage == 10 and selected.age > initial_age:
+                self.assertEqual(panel.individual['energy_ratio'], selected.energy / selected.max_energy)
+                self.assertEqual(panel.individual['age'], selected.age)
                 self.assertGreater(world.step_count, 0)
                 pygame.event.post(pygame.event.Event(pygame.QUIT))
-                stage = 8
+                stage = 11
 
         old_cwd = Path.cwd()
         try:
@@ -135,9 +159,9 @@ class StatusPanelTests(unittest.TestCase):
                 main.run_with_visualization(world)
         finally:
             os.chdir(old_cwd)
-        self.assertEqual(stage, 8)
+        self.assertEqual(stage, 11)
         self.assertFalse(pygame.get_init())
-        for name in ['10_status_herbivore.png', '11_status_summary.png', '12_status_strengths.png', '13_status_carnivore.png']:
+        for name in ['10_status_herbivore.png', '11_status_summary.png', '12_status_strengths.png', '13_status_carnivore.png', '14_navigator_overview.png', '15_navigator_selected.png', '16_navigator_carnivore.png']:
             path = out / name
             self.assertTrue(path.read_bytes().startswith(b'\x89PNG'))
             self.assertEqual(pygame.image.load(path).get_size(), (1040, 640))
