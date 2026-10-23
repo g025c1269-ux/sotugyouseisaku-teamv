@@ -13,6 +13,7 @@ DATA_PATH = Path(__file__).with_name("data") / "status_explanations.json"
 class StatusExplainer:
     def __init__(self, data_path=DATA_PATH):
         self.data = json.loads(Path(data_path).read_text(encoding="utf-8"))
+        self.modes = self.data["modes"]
         self.stats = self.data["stats"]
         self.keys = tuple(s["key"] for s in self.stats)
         if len(set(self.keys)) != len(self.keys):
@@ -33,12 +34,15 @@ class StatusExplainer:
             ids.add(rule["id"])
             if rule.get("species") not in (None, *self.data["species"]):
                 raise ValueError("Unknown species in rule")
+            if rule.get("mode") not in (None, *self.modes):
+                raise ValueError("Unknown mode in rule")
             if any(k not in self.keys or v not in LEVELS for k, v in rule["when"].items()):
                 raise ValueError("Unknown status/level in rule")
         for key, text in self.data["special"].items():
             parts = key.split("|")
-            if (len(parts) != len(self.keys) + 1 or parts[0] not in self.data["species"]
-                    or any(v not in LEVELS for v in parts[1:]) or not text.strip()):
+            if (len(parts) != len(self.keys) + 2 or parts[0] not in self.modes
+                    or parts[1] not in self.data["species"]
+                    or any(v not in LEVELS for v in parts[2:]) or not text.strip()):
                 raise ValueError("Invalid exact combination")
 
     def classify(self, key, value):
@@ -49,29 +53,39 @@ class StatusExplainer:
         low, high = stat["thresholds"]
         return "LOW" if value < low else "MID" if value < high else "HIGH"
 
-    def explain_values(self, species, genes, energy_ratio):
+    @staticmethod
+    def current_mode():
+        import config
+        return "nn" if config.USE_NEUROEVOLUTION else "rule"
+
+    def explain_values(self, species, genes, energy_ratio, mode=None):
+        mode = self.current_mode() if mode is None else mode
+        if mode not in self.modes:
+            raise ValueError("Unknown action mode")
         if species not in self.data["species"]:
             raise ValueError("Unknown species")
         values = {s["key"]: float(genes[s["key"]]) if s["source"] == "gene"
                   else float(energy_ratio) for s in self.stats}
         levels = {k: self.classify(k, v) for k, v in values.items()}
-        key = "|".join([species] + [levels[k] for k in self.keys])
+        key = "|".join([mode, species] + [levels[k] for k in self.keys])
         matched = [r for r in self.data["relations"]
                    if r.get("species", species) == species
+                   and r.get("mode", mode) == mode
                    and all(levels[k] == v for k, v in r["when"].items())]
         relationships = list(dict.fromkeys(r["text"] for r in matched))
         covered = {key for rule in matched for key in rule["when"]}
+        inactive = [s["key"] for s in self.stats if mode in s.get("inactive_in", [])]
         # Explain each ability once: pair rules take precedence over single-stat text.
         descriptions = [s["descriptions"][levels[s["key"]]] for s in self.stats
-                        if s["key"] not in covered]
+                        if s["key"] not in covered and s["key"] not in inactive]
         headline = self.data["special"].get(key, "")
         summary = "".join(([headline] if headline else []) + relationships + descriptions)
         return {
-            "key": key, "species": species, "species_label": self.data["species"][species],
+            "key": key, "mode": mode, "mode_label": self.modes[mode], "inactive_stats": inactive, "species": species, "species_label": self.data["species"][species],
             "values": values, "levels": levels, "summary": summary,
             "relationships": relationships,
-            "strengths": list(dict.fromkeys(s["strengths"][levels[s["key"]]] for s in self.stats)),
-            "weaknesses": list(dict.fromkeys(s["weaknesses"][levels[s["key"]]] for s in self.stats)),
+            "strengths": list(dict.fromkeys(s["strengths"][levels[s["key"]]] for s in self.stats if s["key"] not in inactive)),
+            "weaknesses": list(dict.fromkeys(s["weaknesses"][levels[s["key"]]] for s in self.stats if s["key"] not in inactive)),
             "unclassified_genes": sorted(set(genes) - {s["key"] for s in self.stats if s["source"] == "gene"}),
         }
 
@@ -87,7 +101,8 @@ class StatusExplainer:
         zone = world.get_zone(org.x, org.y)
         result["state"] = {"energy": org.energy, "max_energy": org.max_energy,
                            "age": org.age, "alive": org.alive, "x": org.x, "y": org.y,
-                           "zone": zone, "temperature": config.TEMPERATURE}
+                           "zone": zone, "temperature": config.TEMPERATURE,
+                           "max_age": config.MAX_AGE, "min_reproduce_age": config.MIN_REPRODUCE_AGE}
         temp_cost = org._calc_temp_penalty(world)
         move_cost = org._move_energy_cost(world)
         base = (config.HERBIVORE_BASE_ENERGY_COST if org.org_type == "herbivore"
@@ -97,6 +112,29 @@ class StatusExplainer:
         result["context"] = [self.data["context"]["costs"].format(
             temperature=config.TEMPERATURE, ideal=org.genes["cold_resistance"] * 40,
             temp_cost=temp_cost, base=base, move=move_cost)]
+        context = self.data["context"]
+        result["context"].extend([
+            context["mode_" + result["mode"]],
+            context["age"].format(max_age=config.MAX_AGE, age=org.age),
+            context["energy_gate"].format(ready="満たしています" if ratio >= .8 else "満たしていません"),
+            context["sea"],
+        ])
+        if result["mode"] == "nn":
+            result["context"].append(context["nn_age"].format(
+                minimum=config.MIN_REPRODUCE_AGE,
+                ready="満たしています" if org.age >= config.MIN_REPRODUCE_AGE else "満たしていません"))
+            count = sum(p.size for p in org.brain.params()) if org.brain is not None else 0
+            result["state"]["brain_parameters"] = count
+            result["context"].append(context["nn_brain"].format(count=count))
+            if org.org_type == "carnivore":
+                from organism import CARN_HERB_RATIO_LIMIT
+                herbs = sum(o.alive and o.org_type == "herbivore" for o in world.organisms)
+                carns = sum(o.alive and o.org_type == "carnivore" for o in world.organisms)
+                density = carns / herbs if herbs else math.inf
+                result["state"]["population_ratio"] = density
+                result["context"].append(context["nn_density"].format(
+                    ratio=f"{density:.3f}" if herbs else "草食0のため無限大",
+                    limit=CARN_HERB_RATIO_LIMIT))
         if org.org_type == "carnivore":
             tolerance = org.genes["river_tolerance"]
             fish = self.data["context"]["fish_positive" if tolerance > .8 else "fish_zero"]
@@ -107,7 +145,7 @@ class StatusExplainer:
             result["context"].append(self.data["text"]["unknown"])
         return result
 
-    def combinations(self, species):
+    def combinations(self, species, mode=None):
         """Yield every final explanation, using interval midpoints as examples."""
         for combination in itertools.product(LEVELS, repeat=len(self.stats)):
             values = {}
@@ -116,16 +154,17 @@ class StatusExplainer:
                 i = LEVELS.index(level)
                 values[stat["key"]] = (bounds[i] + bounds[i + 1]) / 2
             genes = {s["key"]: values[s["key"]] for s in self.stats if s["source"] == "gene"}
-            yield self.explain_values(species, genes, values["energy_ratio"])
+            yield self.explain_values(species, genes, values["energy_ratio"], mode=mode)
 
     def export_csv(self, path):
         with Path(path).open("w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
-            writer.writerow(["species", "key", *self.keys, "summary", "strengths", "weaknesses"])
-            for species in self.data["species"]:
-                for r in self.combinations(species):
-                    writer.writerow([r["species_label"], r["key"], *r["levels"].values(),
-                                     r["summary"], "／".join(r["strengths"]), "／".join(r["weaknesses"])])
+            writer.writerow(["mode", "species", "key", *self.keys, "summary", "strengths", "weaknesses"])
+            for mode in self.modes:
+                for species in self.data["species"]:
+                    for r in self.combinations(species, mode=mode):
+                        writer.writerow([r["mode_label"], r["species_label"], r["key"], *r["levels"].values(),
+                                         r["summary"], "／".join(r["strengths"]), "／".join(r["weaknesses"])])
 
 
 if __name__ == "__main__":

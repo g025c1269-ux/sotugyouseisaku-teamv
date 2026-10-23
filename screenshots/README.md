@@ -74,3 +74,14 @@ GitHubの画像ページで表示できない場合は、Raw表示またはダ�
 - [肉食動物・現在値と評価](13_status_carnivore.png)
 
 [設計・閾値・検証手順](../docs/status_explainer.md) / [全4,374件の解説CSV（ZIP）](../docs/status_combinations.zip)
+
+
+## 最新mainとの統合確認
+
+- [統合版タイトル](18_integrated_title.png)
+- [準備中のミッション仮画面](19_integrated_mission.png)
+- [季節エフェクトと観察ナビ](20_integrated_navigator.png)
+- [最新の速度ボタン・表示切替](21_integrated_controls.png)
+- [選択個体のナビ](22_integrated_selected.png)
+
+最新mainとの統合版では、Nがナビ切替、Eは季節エフェクトの切替です。過去の画像にある旧キー案内は現行の操作ではありません。[現行の起動・操作手順](../README.md)を参照してください。

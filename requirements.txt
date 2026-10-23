@@ -1,0 +1,7 @@
+# Python 3.12 (64-bit) recommended; all dependencies used by the existing game.
+numpy==2.5.4
+matplotlib==3.11.2
+japanize-matplotlib==1.1.3
+pygame==2.6.1
+# pygame/japanize-matplotlib still use pkg_resources/distutils on Python 3.12.
+setuptools==80.10.2
