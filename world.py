@@ -346,13 +346,43 @@ class World:
         if not active:
             return
         all_inputs = np.array([o.build_nn_inputs(self) for o in active])
-        all_probs = NeuralNetwork.batch_forward(active, all_inputs)
-        for org, probs in zip(active, all_probs):
+        all_probs, all_hidden = NeuralNetwork.batch_forward(active, all_inputs)
+        for i, org in enumerate(active):
             if not org.alive:
                 continue
-            action, target = org.action_from_probs(self, probs)
+            # 強化学習用に、このステップの入力・隠れ層・確率・選んだ行動を保存する
+            choice = org.sample_choice(all_probs[i])
+            org._rl_inp, org._rl_hidden, org._rl_probs, org._rl_action = (
+                all_inputs[i], all_hidden[i], all_probs[i], choice)
+            org._ate_food = org._ate_prey = org._reproduced = False
+
+            action, target = org.action_from_choice(self, choice)
             org._execute_action(action, target, self)
 
+            # 行動の結果から報酬を計算し、ポリシーグラジェントで重みを更新する (学習した重みは子に遺伝する)
+            reward = self._compute_reward(org)
+            org.brain.rl_update(org._rl_inp, org._rl_hidden, org._rl_probs, org._rl_action,
+                                reward, config.RL_LEARNING_RATE)
+
+    # --------------------------------------------------
+    # 強化学習の報酬 (行動後の状態から計算する)
+    #  食物/捕食/繁殖の報酬 + 捕食者が隣接しているペナルティ(草食のみ) + 低エネルギーペナルティ
+    # --------------------------------------------------
+    def _compute_reward(self, o):
+        r = 0.0
+        if o._ate_food:
+            r += config.RL_REWARD_FOOD
+        if o._ate_prey:
+            r += config.RL_REWARD_HUNT
+        if o._reproduced:
+            r += config.RL_REWARD_REPRODUCE
+        if o.org_type == "herbivore" and self.get_nearest_carnivore(o.x, o.y, radius=1) is not None:
+            r += config.RL_PENALTY_PREDATOR
+        if o.energy < o.max_energy * config.RL_LOW_ENERGY_THRESH:
+            r += config.RL_PENALTY_LOW_ENERGY
+        return r
+
+    # --------------------------------------------------
     def update_temperature(self):
         """現在の世代から気温を計算してconfig.TEMPERATUREに反映する (TEMP_SUMMER==TEMP_WINTERなら固定気温)"""
         config.TEMPERATURE = (config.TEMP_SUMMER + config.TEMP_WINTER) / 2 + \

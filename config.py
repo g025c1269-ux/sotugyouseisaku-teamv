@@ -83,3 +83,12 @@ MAX_GENERATIONS   = 100
 # --- 可視化設定 ---
 VISUALIZE        = True
 DISPLAY_INTERVAL = 5
+
+# --- 強化学習 (ラマルク型ポリシーグラジェント。USE_NEUROEVOLUTION=Trueのときだけ使う) ---
+RL_LEARNING_RATE      = 0.005
+RL_REWARD_FOOD        = 0.1
+RL_REWARD_HUNT        = 0.1
+RL_REWARD_REPRODUCE   = 5.0
+RL_PENALTY_PREDATOR   = -0.5
+RL_PENALTY_LOW_ENERGY = -0.5
+RL_LOW_ENERGY_THRESH  = 0.25   # 最大エネルギーに対する割合

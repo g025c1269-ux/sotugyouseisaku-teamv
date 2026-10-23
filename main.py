@@ -242,7 +242,8 @@ def _draw_legend(screen, pygame, small_font, x, y, renderer):
 def _draw_view_hud(screen, pygame, small_font, renderer, clock, follow):
     text = (f"FPS {clock.get_fps():.0f} | x{renderer.zoom // CELL} | "
             f"ホイール:ズーム ドラッグ:移動 F:追跡{'中' if follow else ''} | "
-            f"V:食料{'表示' if renderer.show_food else '非表示'}")
+            f"V:食料{'表示' if renderer.show_food else '非表示'} | "
+            f"E:エフェクト{'ON' if renderer.show_season_fx else 'OFF'}")
     surf = small_font.render(text, True, (255, 255, 255))
     shade = pygame.Surface((surf.get_width() + 8, surf.get_height() + 4), pygame.SRCALPHA)
     shade.fill((0, 0, 0, 150))
@@ -282,20 +283,20 @@ def _draw_average_panel(screen, pygame, font, big_font, small_font, herbs, carns
     def avg(orgs, key):
         return float(np.mean([o.genes[key] for o in orgs])) if orgs else 0.0
 
-    bar_h = 8
+    bar_h = 6
 
     section = font.render("草食動物の平均形質", True, (100, 181, 246))
     screen.blit(section, (x, y))
     y += section.get_height() + 2
     for label, key in TRAIT_FIELDS:
-        y = _draw_bar(screen, pygame, small_font, x, y, bar_w, bar_h, avg(herbs, key), label, (66, 165, 245)) + 2
+        y = _draw_bar(screen, pygame, small_font, x, y, bar_w, bar_h, avg(herbs, key), label, (66, 165, 245)) + 1
 
     y += 2
     section = font.render("肉食動物の平均形質", True, (239, 83, 80))
     screen.blit(section, (x, y))
     y += section.get_height() + 2
     for label, key in TRAIT_FIELDS:
-        y = _draw_bar(screen, pygame, small_font, x, y, bar_w, bar_h, avg(carns, key), label, (239, 83, 80)) + 2
+        y = _draw_bar(screen, pygame, small_font, x, y, bar_w, bar_h, avg(carns, key), label, (239, 83, 80)) + 1
 
 
 # --------------------------------------------------
@@ -465,6 +466,8 @@ def run_with_visualization(world):
                     renderer.set_zoom(ZOOM_LEVELS[event.key - pygame.K_1])
                 elif event.key == pygame.K_v:
                     renderer.show_food = not renderer.show_food
+                elif event.key == pygame.K_e:
+                    renderer.show_season_fx = not renderer.show_season_fx
                 elif event.key == pygame.K_f:
                     follow = not follow and selected_org is not None
                 elif event.key == pygame.K_m:

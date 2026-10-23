@@ -21,6 +21,7 @@ import random
 
 import numpy as np
 import config
+from season_effects import SeasonEffects, season_of
 
 CELL = 4                    # 地形タイルの基本ピクセル数 (俯瞰の1マス)。160マス x 4px = 640px
 ZOOM_LEVELS = (4, 16, 32)   # 1マスのピクセル数 (4=俯瞰, 16=標準, 32=接近)
@@ -220,9 +221,10 @@ class PixelRenderer:
         self._world_ref = None
         self._tint_temp = None
         self._tint_surface = None
-        self._snow = None
         self._rng = random.Random(12345)
+        self.season_fx = SeasonEffects(pygame, self.view, label_font)   # 季節の演出 (見た目のみ)
         self.show_food = True      # 食物(木の実)を描くか (Vキーで切り替え)
+        self.show_season_fx = True # 季節エフェクト(桜・紅葉・雪・日差し)を描くか (Eキーで切り替え。季節バッジは常に表示)
 
         # カメラ
         self.zoom = ZOOM_LEVELS[0]
@@ -554,27 +556,17 @@ class PixelRenderer:
             surf.fill((255, 110, 50, int(60 * hot)))
         self._tint_surface = surf
         self._tint_temp = temp
-        if temp <= 10.0 and self._snow is None:
-            r = self._rng
-            self._snow = [[r.uniform(0, self.view), r.uniform(0, self.view), r.uniform(0.4, 1.2)]
-                          for _ in range(70)]
-        elif temp > 10.0:
-            self._snow = None
 
-    def _draw_weather(self, screen):
+    def _draw_weather(self, screen, world):
         if self._tint_temp != config.TEMPERATURE:
             self._build_tint()
         if self._tint_surface is not None:
             screen.blit(self._tint_surface, (0, 0))
-        if self._snow:
-            for f in self._snow:
-                f[1] += f[2]
-                f[0] += 0.2
-                if f[1] >= self.view:
-                    f[1] = 0
-                if f[0] >= self.view:
-                    f[0] = 0
-                screen.fill((255, 255, 255), (int(f[0]), int(f[1]), 2, 2))
+        # 季節の演出 (春:桜 / 夏:光の筋 / 秋:モミジ / 冬:雪) と、右下の季節アイコン
+        season = season_of(world.generation)
+        if self.show_season_fx:
+            self.season_fx.draw(screen, season)
+        self.season_fx.draw_badge(screen, season, config.TEMPERATURE)
 
     # =================================================
     # ミニマップ (ズーム中だけ表示)
@@ -657,7 +649,7 @@ class PixelRenderer:
 
         self._update_effects(world)
         self._draw_effects(screen)
-        self._draw_weather(screen)
+        self._draw_weather(screen, world)
 
         # 選択中の個体: 点滅する黄色の枠
         if (selected_org is not None and selected_org.alive and selected_org in world.organisms

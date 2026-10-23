@@ -16,8 +16,9 @@ CARN_HERB_RATIO_LIMIT = 0.3   # 肉食/草食比がこれを超えると肉食�
 
 
 # =============================================
-# ニューラルネットワーク (入力8 → 隠れ8(ReLU) → 出力6(softmax))
-# 重みは-1〜1の一様乱数で初期化し、クリップはしない
+# ニューラルネットワーク (入力8 → 隠れ8(tanh) → 出力6(softmax)、バイアスなし)
+# 重みは-1〜1の一様乱数で初期化し、突然変異ではクリップしない
+# 生涯の間にrl_update()で重みが更新され、その学習済みの重みが子に遺伝する (ラマルク型)
 # =============================================
 class NeuralNetwork:
     N_IN, N_HIDDEN, N_OUT = 8, 8, 6
@@ -25,36 +26,44 @@ class NeuralNetwork:
     def __init__(self, params=None):
         if params is None:
             self.w1 = np.random.uniform(-1, 1, (self.N_IN, self.N_HIDDEN))
-            self.b1 = np.random.uniform(-1, 1, self.N_HIDDEN)
             self.w2 = np.random.uniform(-1, 1, (self.N_HIDDEN, self.N_OUT))
-            self.b2 = np.random.uniform(-1, 1, self.N_OUT)
         else:
-            self.w1, self.b1, self.w2, self.b2 = (p.copy() for p in params)
+            self.w1, self.w2 = (p.copy() for p in params)
 
     def params(self):
-        return (self.w1, self.b1, self.w2, self.b2)
+        return (self.w1, self.w2)
 
     def forward(self, inputs):
-        h = np.maximum(0.0, inputs @ self.w1 + self.b1)
-        z = h @ self.w2 + self.b2
+        h = np.tanh(inputs @ self.w1)
+        z = h @ self.w2
         e = np.exp(z - z.max())
         return e / e.sum()
 
     # バッチ推論: 個体ごとに別々の重みを持つN匹分を、einsumで一括計算する
-    # organisms: Organismのlist (brainを持つ) / all_inputs: (N, 8) → 戻り値: (N, 6) の行動確率
+    # organisms: Organismのlist (brainを持つ) / all_inputs: (N, 8)
+    # 戻り値: (probs (N, 6) 行動確率, hidden (N, 8) 隠れ層出力。hiddenはrl_updateで使う)
     # (単体のforward()と同じ式。デバッグ・単体テスト用にforward()も残してある)
     @staticmethod
     def batch_forward(organisms, all_inputs):
         all_w1 = np.stack([o.brain.w1 for o in organisms])   # (N, 8, 8)
-        all_b1 = np.stack([o.brain.b1 for o in organisms])   # (N, 8)
         all_w2 = np.stack([o.brain.w2 for o in organisms])   # (N, 8, 6)
-        all_b2 = np.stack([o.brain.b2 for o in organisms])   # (N, 6)
-        hidden = np.einsum("ni,nij->nj", all_inputs, all_w1) + all_b1
-        hidden = np.maximum(0.0, hidden)                      # ReLU
-        logits = np.einsum("ni,nij->nj", hidden, all_w2) + all_b2
-        logits -= logits.max(axis=1, keepdims=True)           # softmax
-        e = np.exp(logits)
-        return e / e.sum(axis=1, keepdims=True)
+        hidden = np.tanh(np.einsum("ni,nij->nj", all_inputs, all_w1))
+        logits = np.einsum("ni,nij->nj", hidden, all_w2)
+        exp_l = np.exp(logits - logits.max(axis=1, keepdims=True))
+        probs = exp_l / exp_l.sum(axis=1, keepdims=True)
+        return probs, hidden
+
+    # ポリシーグラジェント更新 (ラマルク型: w1・w2を両方更新する)
+    # 選んだ行動action_idxのlog確率を、報酬rewardに比例して増減させる (reward<0なら選びにくくなる)
+    def rl_update(self, inp, hidden, probs, action_idx, reward, lr):
+        # logitsに対する勾配: reward * (one-hot(a) - probs)
+        d_logits = probs.copy()
+        d_logits[action_idx] -= 1.0
+        d_logits *= -reward
+        # 隠れ層への勾配は、w2を更新する前の値で計算する (tanhの微分: 1 - hidden^2)
+        d_hidden = (self.w2 @ d_logits) * (1.0 - hidden ** 2)
+        self.w2 += lr * np.outer(hidden, d_logits)    # (8, 6)
+        self.w1 += lr * np.outer(inp, d_hidden)       # (8, 8)
 
     # 交叉: 重み1つ1つについて、両親のどちらかを50%の確率で選ぶ (partnerなしなら親のコピー)
     # 突然変異: 各重みがMUTATION_RATEの確率で、標準偏差MUTATION_STRENGTHの正規ノイズを加算 (クリップなし)
@@ -105,6 +114,15 @@ class Organism:
         self.brain = None
         if config.USE_NEUROEVOLUTION:
             self.brain = brain if brain is not None else NeuralNetwork()
+
+        # 強化学習用: 直前のステップの入力・隠れ層・行動確率・選んだ行動と、報酬計算用のフラグ
+        self._rl_inp    = None
+        self._rl_hidden = None
+        self._rl_probs  = None
+        self._rl_action = None
+        self._ate_food   = False
+        self._ate_prey   = False
+        self._reproduced = False
 
     # --------------------------------------------------
     # 行動メインループ
@@ -245,6 +263,10 @@ class Organism:
 
     # NNの出力確率から行動を選ぶ (繁殖の制限・若年繁殖制限・密度抑制はここで個別に適用)
     def action_from_probs(self, world, probs):
+        return self.action_from_choice(world, self.sample_choice(probs))
+
+    # 出力確率から行動インデックス(0:上 1:下 2:左 3:右 4:待機 5:繁殖)を1つ選ぶ。RLの「選んだ行動」はこの値
+    def sample_choice(self, probs):
         # 繁殖はエネルギーが閾値以上のときだけ可能 (足りないときは選べない)
         if self.energy < self.max_energy * 0.8:
             probs = probs.copy()
@@ -253,8 +275,10 @@ class Organism:
         # np.random.choice(p=probs)と同じ手順 (累積確率に一様乱数を1つ当てる) を直接行う
         cdf = probs.cumsum()
         cdf /= cdf[-1]
-        choice = min(int(cdf.searchsorted(np.random.random_sample(), side="right")), NeuralNetwork.N_OUT - 1)
+        return min(int(cdf.searchsorted(np.random.random_sample(), side="right")), NeuralNetwork.N_OUT - 1)
 
+    # 行動インデックス → 実際に実行する行動 (若年繁殖制限・密度抑制などはここで個別に適用)
+    def action_from_choice(self, world, choice):
         if choice < 4:
             return "move", NN_MOVES[choice]
         if choice == NN_REPRODUCE:
@@ -339,14 +363,17 @@ class Organism:
             if self.org_type == "herbivore":
                 if world.consume_food(self.x, self.y):
                     self.energy = min(self.energy + config.HERBIVORE_ENERGY_FROM_FOOD, self.max_energy)
+                    self._ate_food = True
             else:
                 prey = world.get_nearest_herbivore(self.x, self.y, radius=1)
                 if prey and prey.alive:
                     prey.alive = False
                     self.energy = min(self.energy + config.CARNIVORE_ENERGY_FROM_PREY, self.max_energy)
+                    self._ate_prey = True
 
         elif action == "reproduce":
             world.spawn_offspring(self)
+            self._reproduced = True
             cost = (config.HERBIVORE_REPRODUCTION_COST if self.org_type == "herbivore"
                     else config.CARNIVORE_REPRODUCTION_COST)
             self.energy -= cost
