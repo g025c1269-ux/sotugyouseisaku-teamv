@@ -329,7 +329,7 @@ def _draw_selected_panel(screen, pygame, font, big_font, small_font, world, x, y
         y = _draw_bar(screen, pygame, small_font, x, y, bar_w, bar_h, org.genes[key], label, color) + 2
 
     y += 4
-    hint = small_font.render("何もない場所をクリックすると平均表示に戻ります", True, (140, 140, 140))
+    hint = small_font.render("N:観察ナビ / Tab:個体詳細 / 空白クリック:平均表示", True, (140, 140, 140))
     screen.blit(hint, (x, y))
 
 
@@ -425,6 +425,7 @@ def _step_simulation(world, step_in_gen, extinct, done):
 # =============================================
 def run_with_visualization(world):
     import pygame
+    from navigator_panel import NavigatorPanel
 
     pygame.init()
     pygame.display.set_caption("生態系進化シミュレーション")
@@ -432,6 +433,7 @@ def run_with_visualization(world):
     clock = pygame.time.Clock()
     font, big_font, small_font = _load_fonts(pygame)
     renderer = PixelRenderer(pygame, world, small_font)
+    status_panel = NavigatorPanel((GRID_PANEL_SIZE, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT))
 
     world.generation += 1  # 1世代目を開始
     step_in_gen = 0
@@ -455,6 +457,8 @@ def run_with_visualization(world):
 
     while running:
         for event in pygame.event.get():
+            if status_panel.handle_event(event, selected_org):
+                continue
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
@@ -577,6 +581,7 @@ def run_with_visualization(world):
             pygame.draw.rect(screen, (0, 0, 0), rect.inflate(20, 16))
             screen.blit(msg, rect)
 
+        status_panel.draw(screen, selected_org, world)
         pygame.display.flip()
         clock.tick(60)
 
@@ -680,8 +685,9 @@ def save_result_graph(world):
 # エントリーポイント
 # =============================================
 if __name__ == "__main__":
-    world = World()
     if config.VISUALIZE:
-        run_with_visualization(world)
+        from title_screen import show_title_screen
+        if show_title_screen() == "god":
+            run_with_visualization(World())
     else:
-        run_headless(world)
+        run_headless(World())

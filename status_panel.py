@@ -38,7 +38,7 @@ class StatusPanel:
 
     def handle_event(self, event, org):
         self._sync_selection(org)
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_e and org is not None:
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_n and org is not None:
             self.open = not self.open
             return True
         if not self.open:
@@ -79,20 +79,25 @@ class StatusPanel:
                      config.TEMPERATURE, config.HERBIVORE_BASE_ENERGY_COST,
                      config.CARNIVORE_BASE_ENERGY_COST, config.HERBIVORE_TEMP_PENALTY_COEF,
                      config.CARNIVORE_TEMP_PENALTY_COEF, config.DESERT_TEMP_PENALTY_MULTIPLIER,
-                     config.HERBIVORE_MOVE_ENERGY_COST, config.CARNIVORE_MOVE_ENERGY_COST)
+                     config.HERBIVORE_MOVE_ENERGY_COST, config.CARNIVORE_MOVE_ENERGY_COST,
+                     config.USE_NEUROEVOLUTION, config.MAX_AGE, config.MIN_REPRODUCE_AGE,
+                     org.org_type, sum(o.alive and o.org_type == 'herbivore' for o in world.organisms),
+                     sum(o.alive and o.org_type == 'carnivore' for o in world.organisms))
         if signature == self.signature:
             return
         r = self.explainer.explain_organism(org, world)
         state = r['state']
-        zones = {'grassland':'草原', 'river':'川', 'mountain':'山', 'desert':'砂漠'}
+        zones = {'grassland':'草原', 'river':'川', 'mountain':'山', 'desert':'砂漠', 'sea':'海'}
         paragraphs = [f"種類：{r['species_label']} / {'生存' if state['alive'] else '死亡'}",
                       f"エネルギー：{state['energy']:.3f} / {state['max_energy']:.3f}",
-                      f"年齢：{state['age']} ステップ（寿命の設定なし）",
+                      f"年齢：{state['age']} / 寿命 {state['max_age']} ステップ",
+                      f"行動方式：{r['mode_label']}",
                       f"現在地：{zones.get(state['zone'], state['zone'])} ({state['x']}, {state['y']})",
                       '【現在の能力・評価】']
         for stat in self.explainer.stats:
             key = stat['key']
-            paragraphs.extend([stat['label'], f"  {r['values'][key]:.6f} [{r['levels'][key]}]"])
+            paragraphs.extend([stat['label'], f"  {r['values'][key]:.6f} [{r['levels'][key]}]"
+                               + (' ※現在の方式では未使用' if key in r['inactive_stats'] else '')])
         paragraphs += ['LOW＝低い / MID＝普通 / HIGH＝高い',
                        '評価は値の大小です。高いほど有利とは限りません。',
                        '【組み合わせ総合解説】', r['summary'],
@@ -128,7 +133,7 @@ class StatusPanel:
         screen.blit(self.heading.render('生物のステータス解説', True, (235, 245, 230)), (self.rect.x + 16, 18))
         pygame.draw.rect(screen, (43, 73, 53), self.close_rect, border_radius=5)
         screen.blit(self.font.render('閉じる', True, (240, 245, 235)), (self.close_rect.x + 8, self.close_rect.y + 5))
-        screen.blit(self.font.render('E：表示切替 / ホイール：スクロール', True, (161, 188, 167)), (self.rect.x + 16, 57))
+        screen.blit(self.font.render('N：表示切替 / ホイール：スクロール', True, (161, 188, 167)), (self.rect.x + 16, 57))
         clip = screen.get_clip()
         screen.set_clip(self.body.clip(clip))
         for i, (line, color) in enumerate(self.lines):
