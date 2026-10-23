@@ -6,7 +6,7 @@
 import math
 import numpy as np
 import config
-from organism import Organism
+from organism import Organism, NeuralNetwork
 
 
 # =============================================
@@ -323,8 +323,11 @@ class World:
         self._new_offspring = []
         np.random.shuffle(self.organisms)
         self._build_spatial_index()
-        for org in self.organisms:
-            org.step(self)
+        if config.USE_NEUROEVOLUTION:
+            self._step_organisms_batched()
+        else:
+            for org in self.organisms:
+                org.step(self)
 
         self.organisms = [o for o in self.organisms if o.alive]
         self.organisms.extend(self._new_offspring)
@@ -332,6 +335,24 @@ class World:
     # --------------------------------------------------
     # 1世代分のステップを実行してデータを記録する
     # --------------------------------------------------
+    # --------------------------------------------------
+    # NNモードの個体行動 (行動決定フェーズをバッチ処理)
+    #  1) 全個体の加齢・基本コスト・魚捕りを済ませ、生き残った個体を集める
+    #  2) 生き残り全員のNN入力をステップ開始時点の盤面でまとめて作り、batch_forwardで一括推論
+    #  3) 各個体に行動確率を配り、順番に行動を選んで実行する (他の個体に先に食べられた/殺された個体は行動しない)
+    # --------------------------------------------------
+    def _step_organisms_batched(self):
+        active = [o for o in self.organisms if o._pre_decision(self)]
+        if not active:
+            return
+        all_inputs = np.array([o.build_nn_inputs(self) for o in active])
+        all_probs = NeuralNetwork.batch_forward(active, all_inputs)
+        for org, probs in zip(active, all_probs):
+            if not org.alive:
+                continue
+            action, target = org.action_from_probs(self, probs)
+            org._execute_action(action, target, self)
+
     def update_temperature(self):
         """現在の世代から気温を計算してconfig.TEMPERATUREに反映する (TEMP_SUMMER==TEMP_WINTERなら固定気温)"""
         config.TEMPERATURE = (config.TEMP_SUMMER + config.TEMP_WINTER) / 2 + \

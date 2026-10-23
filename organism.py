@@ -40,6 +40,22 @@ class NeuralNetwork:
         e = np.exp(z - z.max())
         return e / e.sum()
 
+    # バッチ推論: 個体ごとに別々の重みを持つN匹分を、einsumで一括計算する
+    # organisms: Organismのlist (brainを持つ) / all_inputs: (N, 8) → 戻り値: (N, 6) の行動確率
+    # (単体のforward()と同じ式。デバッグ・単体テスト用にforward()も残してある)
+    @staticmethod
+    def batch_forward(organisms, all_inputs):
+        all_w1 = np.stack([o.brain.w1 for o in organisms])   # (N, 8, 8)
+        all_b1 = np.stack([o.brain.b1 for o in organisms])   # (N, 8)
+        all_w2 = np.stack([o.brain.w2 for o in organisms])   # (N, 8, 6)
+        all_b2 = np.stack([o.brain.b2 for o in organisms])   # (N, 6)
+        hidden = np.einsum("ni,nij->nj", all_inputs, all_w1) + all_b1
+        hidden = np.maximum(0.0, hidden)                      # ReLU
+        logits = np.einsum("ni,nij->nj", hidden, all_w2) + all_b2
+        logits -= logits.max(axis=1, keepdims=True)           # softmax
+        e = np.exp(logits)
+        return e / e.sum(axis=1, keepdims=True)
+
     # 交叉: 重み1つ1つについて、両親のどちらかを50%の確率で選ぶ (partnerなしなら親のコピー)
     # 突然変異: 各重みがMUTATION_RATEの確率で、標準偏差MUTATION_STRENGTHの正規ノイズを加算 (クリップなし)
     @staticmethod
@@ -94,12 +110,22 @@ class Organism:
     # 行動メインループ
     # --------------------------------------------------
     def step(self, world):
-        if not self.alive:
+        if not self._pre_decision(world):
             return
+        action, target = self._decide_action(world)
+        self._execute_action(action, target, world)
+
+    # --------------------------------------------------
+    # 行動決定の前に行う処理 (加齢・寿命・基本コスト・魚捕り)。生きていればTrue
+    # (他の個体の位置に依存しないので、NNのバッチ推論の前にまとめて実行できる)
+    # --------------------------------------------------
+    def _pre_decision(self, world):
+        if not self.alive:
+            return False
         self.age += 1
         if self.age > config.MAX_AGE:
             self.alive = False
-            return
+            return False
 
         temp_penalty = self._calc_temp_penalty(world)
         # 基本コスト (じっとしていても消費する分) にはmetabolismのみが影響する。
@@ -113,7 +139,7 @@ class Organism:
 
         if self.energy <= 0:
             self.alive = False
-            return
+            return False
 
         # 肉食動物は川にいると魚を捕れる (river_toleranceが0.8以上の個体だけ)
         if (self.org_type == "carnivore" and world.get_zone(self.x, self.y) == "river"
@@ -124,9 +150,7 @@ class Organism:
                     self.energy + config.CARNIVORE_ENERGY_FROM_FISH,
                     self.max_energy
                 )
-
-        action, target = self._decide_action(world)
-        self._execute_action(action, target, world)
+        return True
 
     # --------------------------------------------------
     # 気温ペナルティ (砂漠にいると係数が1.3倍になる)
@@ -192,6 +216,11 @@ class Organism:
     # 出力softmaxの確率に従って 上/下/左/右/待機/繁殖 を選ぶ
     # --------------------------------------------------
     def _decide_action_nn(self, world):
+        probs = self.brain.forward(self.build_nn_inputs(world))
+        return self.action_from_probs(world, probs)
+
+    # NNへの入力ベクトル (8要素) を作る。world側がバッチ推論の前にまとめて呼ぶ
+    def build_nn_inputs(self, world):
         if self.org_type == "herbivore":
             food = world.get_nearest_food(self.x, self.y, radius=4)
             other = world.get_nearest_carnivore(self.x, self.y, radius=5)
@@ -212,14 +241,19 @@ class Organism:
         inputs[5] = ZONE_INPUT[world.get_zone(self.x, self.y)]
         inputs[6] = config.TEMPERATURE / 40.0
         inputs[7] = min(self.age / 100.0, 1.0)
+        return inputs
 
-        probs = self.brain.forward(inputs)
+    # NNの出力確率から行動を選ぶ (繁殖の制限・若年繁殖制限・密度抑制はここで個別に適用)
+    def action_from_probs(self, world, probs):
         # 繁殖はエネルギーが閾値以上のときだけ可能 (足りないときは選べない)
         if self.energy < self.max_energy * 0.8:
             probs = probs.copy()
             probs[NN_REPRODUCE] = 0.0
             probs /= probs.sum()
-        choice = int(np.random.choice(NeuralNetwork.N_OUT, p=probs))
+        # np.random.choice(p=probs)と同じ手順 (累積確率に一様乱数を1つ当てる) を直接行う
+        cdf = probs.cumsum()
+        cdf /= cdf[-1]
+        choice = min(int(cdf.searchsorted(np.random.random_sample(), side="right")), NeuralNetwork.N_OUT - 1)
 
         if choice < 4:
             return "move", NN_MOVES[choice]
@@ -257,7 +291,7 @@ class Organism:
                         dx = np.random.randint(0, 2) * 2 - 1
                     if dy == 0:
                         dy = np.random.randint(0, 2) * 2 - 1
-                    if not self._step(world, dx, dy):   # 移動先が海ならその移動はキャンセル
+                    if not self._step(world, dx, dy):   # 全方向が海で動けなかった場合だけblocked
                         blocked += 1
                 self.energy -= cost * (steps - blocked)
 
@@ -288,7 +322,7 @@ class Organism:
             for _ in range(steps):
                 dx = np.random.randint(-1, 2)
                 dy = np.random.randint(-1, 2)
-                if not self._step(world, dx, dy):   # 移動先が海ならその移動はキャンセル
+                if not self._step(world, dx, dy):   # 全方向が海で動けなかった場合だけblocked
                     blocked += 1
             self.energy -= cost * (steps - blocked)
 
@@ -299,7 +333,7 @@ class Organism:
             blocked = 0
             cost  = self._move_energy_cost(world)
             for _ in range(steps):
-                if not self._step(world, dx, dy):   # 移動先が海ならその移動はキャンセル
+                if not self._step(world, dx, dy):   # 全方向が海で動けなかった場合だけblocked
                     blocked += 1
             self.energy -= cost * (steps - blocked)
             if self.org_type == "herbivore":
@@ -318,15 +352,27 @@ class Organism:
             self.energy -= cost
 
     # --------------------------------------------------
-    # 1マス移動する。移動先が海(sea)なら移動をキャンセルしてFalseを返す (エネルギーコストなし)
+    # 1マス移動する。移動先が海(sea)なら、他の方向(上下左右のうち試した方向以外)を
+    # ランダムな順に試し、海でない方向へ移動する。全方向が海のときだけその場に留まる
+    # 戻り値: 実際に移動したらTrue (留まったらFalse。エネルギーコストは移動した分だけかかる)
     # --------------------------------------------------
     def _step(self, world, dx, dy):
-        nx = max(0, min(config.GRID_SIZE - 1, self.x + dx))
-        ny = max(0, min(config.GRID_SIZE - 1, self.y + dy))
-        if world.get_zone(nx, ny) == "sea":
-            return False
-        self.x, self.y = nx, ny
-        return True
+        last = config.GRID_SIZE - 1
+        nx = max(0, min(last, self.x + dx))
+        ny = max(0, min(last, self.y + dy))
+        if world.get_zone(nx, ny) != "sea":
+            self.x, self.y = nx, ny
+            return True
+        for k in np.random.permutation(len(NN_MOVES)):
+            mx, my = NN_MOVES[k]
+            if (mx, my) == (dx, dy):
+                continue
+            nx = max(0, min(last, self.x + mx))
+            ny = max(0, min(last, self.y + my))
+            if world.get_zone(nx, ny) != "sea":
+                self.x, self.y = nx, ny
+                return True
+        return False
 
     # --------------------------------------------------
     # 目標座標に近づく (speedが速い個体は1ターンに2マス進む)
@@ -340,7 +386,7 @@ class Organism:
             dy = int(np.sign(target_y - self.y))
             if dx == 0 and dy == 0:
                 break
-            if not self._step(world, dx, dy):   # 移動先が海ならその移動はキャンセル
+            if not self._step(world, dx, dy):   # 全方向が海で動けなかった場合だけblocked
                 blocked += 1
         self.energy -= cost * (steps - blocked)
 

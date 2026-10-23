@@ -6,7 +6,6 @@
 # =============================================
 
 import copy
-import math
 import random
 
 import numpy as np
@@ -59,34 +58,16 @@ TRAIT_FIELDS = [
 
 ZONE_NAMES_JA = {"grassland": "草原", "desert": "砂漠", "mountain": "山", "river": "川", "sea": "海"}
 
-# 速度スライダー: 左端(低速)は1ステップ0.5秒、右端(高速)は旧5倍速相当(60fps中5ステップ/フレーム=300ステップ/秒)
-SPEED_MIN_SPS = 2.0
-SPEED_MAX_SPS = 300.0
-DEFAULT_SPS   = 60.0  # 旧「1倍速」相当
-MAX_STEPS_PER_FRAME = 50
+# 速度ボタン (低速/中速/高速): (内部名, 表示名, 1秒あたりのステップ数)
+SPEED_LEVELS = [("low", "低速", 5.0), ("medium", "中速", 10.0), ("high", "高速", 15.0)]
+SPEED_SPS = {key: sps for key, _, sps in SPEED_LEVELS}
+DEFAULT_SPEED_LEVEL = "medium"
+MAX_STEPS_PER_FRAME = 25   # 1フレームで進めるステップ数の上限 (処理落ち後にまとめて進みすぎないため)
 
 
 def _lerp_color(c1, c2, t):
     t = max(0.0, min(1.0, t))
     return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
-
-
-# --------------------------------------------------
-# 速度スライダー: つまみの位置(0〜1)とステップ/秒の相互変換
-# --------------------------------------------------
-def _slider_t_to_sps(t):
-    t = max(0.0, min(1.0, t))
-    return SPEED_MIN_SPS * (SPEED_MAX_SPS / SPEED_MIN_SPS) ** t
-
-
-def _default_slider_t():
-    return math.log(DEFAULT_SPS / SPEED_MIN_SPS) / math.log(SPEED_MAX_SPS / SPEED_MIN_SPS)
-
-
-def _slider_pos_to_t(mx, track_rect):
-    if track_rect.width <= 0:
-        return 0.0
-    return max(0.0, min(1.0, (mx - track_rect.left) / track_rect.width))
 
 
 # --------------------------------------------------
@@ -270,33 +251,28 @@ def _draw_view_hud(screen, pygame, small_font, renderer, clock, follow):
 
 
 # --------------------------------------------------
-# 右側: 速度スライダー (低速〜高速の連続値、ドラッグで調整)
-# 戻り値: (次の描画y座標, つまみをドラッグ判定するための track_rect)
+# 右側: 速度ボタン (低速/中速/高速の3つを横並び。選択中は青く強調)
+# 戻り値: (次の描画y座標, {速度名: クリック判定用Rect})
 # --------------------------------------------------
-def _draw_speed_slider(screen, pygame, small_font, x, y, width, slider_t, sps):
-    low_label = small_font.render("低速", True, (140, 140, 140))
-    high_label = small_font.render("高速", True, (140, 140, 140))
-    screen.blit(low_label, (x, y))
-    screen.blit(high_label, (x + width - high_label.get_width(), y))
+def _draw_speed_buttons(screen, pygame, small_font, x, y, width, speed_level):
+    gap = 8
+    btn_w = (width - gap * (len(SPEED_LEVELS) - 1)) // len(SPEED_LEVELS)
+    btn_h = small_font.get_height() + 6
+    rects = {}
+    for i, (key, label, _) in enumerate(SPEED_LEVELS):
+        rect = pygame.Rect(x + i * (btn_w + gap), y, btn_w, btn_h)
+        rects[key] = rect
+        selected = key == speed_level
+        pygame.draw.rect(screen, (33, 150, 243) if selected else (50, 55, 62), rect, border_radius=4)
+        pygame.draw.rect(screen, (100, 181, 246) if selected else (90, 95, 100), rect, 1, border_radius=4)
+        text = small_font.render(label, True, (255, 255, 255) if selected else (170, 170, 170))
+        screen.blit(text, text.get_rect(center=rect.center))
 
-    track_x = x + low_label.get_width() + 8
-    track_w = max(10, width - low_label.get_width() - high_label.get_width() - 16)
-    track_y = y + small_font.get_height() // 2 - 2
-    track_h = 4
-    pygame.draw.rect(screen, (50, 55, 62), (track_x, track_y, track_w, track_h))
-
-    handle_x = int(track_x + slider_t * track_w)
-    handle_y = track_y + track_h // 2
-    pygame.draw.circle(screen, (255, 255, 255), (handle_x, handle_y), 6)
-    pygame.draw.circle(screen, (66, 165, 245), (handle_x, handle_y), 6, 2)
-
-    y += small_font.get_height() + 2
-    speed_info = small_font.render(f"({sps:.1f} ステップ/秒、ドラッグで調整)", True, (140, 140, 140))
+    y += btn_h + 3
+    speed_info = small_font.render(f"({SPEED_SPS[speed_level]:.1f} ステップ/秒)", True, (140, 140, 140))
     screen.blit(speed_info, (x, y))
     y += speed_info.get_height() + 4
-
-    track_rect = pygame.Rect(track_x, track_y - 6, track_w, 16)
-    return y, track_rect
+    return y, rects
 
 
 # --------------------------------------------------
@@ -358,9 +334,9 @@ def _draw_selected_panel(screen, pygame, font, big_font, small_font, world, x, y
 
 # --------------------------------------------------
 # 右側: 世代・個体数・気温・モード・速度スライダー・凡例・形質パネル全体
-# 戻り値: 速度スライダーのつまみドラッグ判定用track_rect (画面座標)
+# 戻り値: 速度ボタンのクリック判定用Rectの辞書 (画面座標)
 # --------------------------------------------------
-def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, mode, slider_t, selected_org, renderer):
+def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, mode, speed_level, selected_org, renderer):
     x0 = GRID_PANEL_SIZE
     pygame.draw.rect(screen, PANEL_BG, (x0, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT))
 
@@ -396,8 +372,7 @@ def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, 
         y += surf.get_height() + 2
     y += 3
 
-    sps = _slider_t_to_sps(slider_t)
-    y, slider_track_rect = _draw_speed_slider(screen, pygame, small_font, x, y, bar_w, slider_t, sps)
+    y, speed_button_rects = _draw_speed_buttons(screen, pygame, small_font, x, y, bar_w, speed_level)
 
     y = _draw_legend(screen, pygame, small_font, x, y, renderer)
 
@@ -406,7 +381,7 @@ def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, 
     else:
         _draw_average_panel(screen, pygame, font, big_font, small_font, herbs, carns, x, y, bar_w)
 
-    return slider_track_rect
+    return speed_button_rects
 
 
 # --------------------------------------------------
@@ -464,15 +439,14 @@ def run_with_visualization(world):
     extinct = False        # 全種絶滅したか
     done = False            # ループを止めるべきか (絶滅 または 最大世代到達)
     mode = "normal"         # "normal" または "per_gen" (1世代ごとモード)
-    slider_t = _default_slider_t()
-    dragging_slider = False
+    speed_level = DEFAULT_SPEED_LEVEL   # "low" / "medium" / "high"
     drag_start = None       # 盤面ドラッグ(移動)の開始位置
     drag_last = None
     drag_moved = False
     follow = False          # 選択中の個体を追跡するか
     accumulator = 0.0
     selected_org = None
-    slider_track_rect = pygame.Rect(0, 0, 0, 0)
+    speed_button_rects = {}
 
     # 世代の境界(その世代が始まる直前)の状態を世代番号ごとに保存しておく
     # (1世代ごとモードの←→で、同じ世代には常に同じ状態で戻れるようにするため)
@@ -530,13 +504,12 @@ def run_with_visualization(world):
                         follow = False
                     else:                                    # 盤面: クリックなら選択 / 動かしたら移動
                         drag_start, drag_last, drag_moved = (mx, my), (mx, my), False
-                elif slider_track_rect.collidepoint(mx, my):
-                    dragging_slider = True
-                    slider_t = _slider_pos_to_t(mx, slider_track_rect)
+                else:                                        # 右パネル: 速度ボタン
+                    for key, rect in speed_button_rects.items():
+                        if rect.collidepoint(mx, my):
+                            speed_level = key
             elif event.type == pygame.MOUSEMOTION:
-                if dragging_slider:
-                    slider_t = _slider_pos_to_t(event.pos[0], slider_track_rect)
-                elif drag_start is not None:
+                if drag_start is not None:
                     mx, my = event.pos
                     if abs(mx - drag_start[0]) + abs(my - drag_start[1]) >= 5:
                         drag_moved = True
@@ -550,7 +523,6 @@ def run_with_visualization(world):
                     if selected_org is None:
                         follow = False
                 drag_start = None
-                dragging_slider = False
             elif event.type == pygame.MOUSEWHEEL:
                 mx, my = pygame.mouse.get_pos()
                 if mx < GRID_PANEL_SIZE and event.y != 0:
@@ -570,7 +542,7 @@ def run_with_visualization(world):
 
         if running and not paused and not done:
             accumulator += clock.get_time() / 1000.0
-            sps = _slider_t_to_sps(slider_t)
+            sps = SPEED_SPS[speed_level]
             steps_to_run = min(int(accumulator * sps), MAX_STEPS_PER_FRAME)
             if steps_to_run > 0:
                 accumulator -= steps_to_run / sps
@@ -587,8 +559,8 @@ def run_with_visualization(world):
         screen.fill(BG_COLOR)
         renderer.draw(screen, world, selected_org)
         _draw_view_hud(screen, pygame, small_font, renderer, clock, follow)
-        slider_track_rect = _draw_info_panel(
-            screen, pygame, font, big_font, small_font, world, paused, mode, slider_t, selected_org, renderer
+        speed_button_rects = _draw_info_panel(
+            screen, pygame, font, big_font, small_font, world, paused, mode, speed_level, selected_org, renderer
         )
 
         if extinct:
