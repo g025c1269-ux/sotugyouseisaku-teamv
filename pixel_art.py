@@ -94,7 +94,7 @@ def compose_pixels(org_type, frame, genes):
     herb = (org_type == "herbivore")
     cold = genes["cold_resistance"]
     cb = min(COLD_BUCKETS - 1, int(cold * COLD_BUCKETS))
-    t = cb / (COLD_BUCKETS - 1)
+    t = 1.0 - cb / (COLD_BUCKETS - 1)   # 値が低い(寒い気候向き)ほど t が大きく、白っぽい体色になる
     if herb:
         body = _lerp((214, 170, 120), (236, 236, 246), t)
         eye = (20, 20, 30)
@@ -104,7 +104,7 @@ def compose_pixels(org_type, frame, genes):
     dark = _lerp(body, (0, 0, 0), 0.35)
     belly = _lerp(body, (255, 255, 255), 0.45)
 
-    fur = _lvl(cold)
+    fur = _lvl(1.0 - cold)              # 値が低い(寒い気候向き)ほど毛がもこもこ
     meta = _lvl(genes["metabolism"])
     mt = _lvl(genes["mountain_tolerance"])
     rv = _lvl(genes["river_tolerance"])
@@ -443,7 +443,7 @@ class PixelRenderer:
         h = min(self.grid * CELL - by, -(-(self.view + rem_y) // s))
         sub = base.subsurface((bx, by, w, h))
         screen.blit(pg.transform.scale(sub, (w * s, h * s)), (-rem_x, -rem_y))
-        if self.show_season_fx:     # 春の川の花びら (ズームしたときだけ見える)
+        if self.show_season_fx and config.SEASONS_ENABLED:     # 春の川の花びら (ズームしたときだけ見える。季節OFFでは出さない)
             self.season_terrain.draw_river(screen, z, self.off_x, self.off_y, ticks, self._terrain_key[0])
 
     # =================================================
@@ -452,7 +452,7 @@ class PixelRenderer:
     def _get_sprite(self, org_type, genes, frame, flip, scale):
         cb = min(COLD_BUCKETS - 1, int(genes["cold_resistance"] * COLD_BUCKETS))
         key = (org_type, frame, flip, scale, cb,
-               _lvl(genes["cold_resistance"]), _lvl(genes["metabolism"]),
+               _lvl(1.0 - genes["cold_resistance"]), _lvl(genes["metabolism"]),
                _lvl(genes["mountain_tolerance"]), _lvl(genes["river_tolerance"]),
                _lvl(genes["speed"], 0.4, 0.6))
         sprite = self._sprite_cache.get(key)
@@ -568,6 +568,8 @@ class PixelRenderer:
         if self._tint_surface is not None:
             screen.blit(self._tint_surface, (0, 0))
         # 季節の演出 (春:桜 / 夏:光の筋 / 秋:モミジ / 冬:雪) と、右下の季節アイコン
+        if not config.SEASONS_ENABLED:      # 設定画面で季節をOFFにしたときは出さない
+            return
         season = season_of(world.generation)
         if self.show_season_fx:
             self.season_fx.draw(screen, season)
@@ -582,11 +584,17 @@ class PixelRenderer:
         screen.blit(self.season_terrain.minimap(self._terrain_key, self.mm_size), r.topleft)
         m = self.mm_scale
         carns = []
+        herbs = []
         for o in world.organisms:
             if o.org_type == "herbivore":
-                screen.fill(DOT_HERB, (r.left + o.y * m, r.top + o.x * m, m, m))
+                herbs.append(o)
             else:
                 carns.append(o)
+        # 草食は白い点に、右下へ黒い影をつける (雪の白に埋もれないように)。影を先にまとめて描く
+        for o in herbs:
+            screen.fill(DOT_EDGE, (r.left + o.y * m, r.top + o.x * m, 2 * m, 2 * m))
+        for o in herbs:
+            screen.fill(DOT_HERB, (r.left + o.y * m, r.top + o.x * m, m, m))
         for o in carns:        # 肉食は最後に描いて埋もれないようにする
             screen.fill(DOT_CARN, (r.left + o.y * m, r.top + o.x * m, m, m))
         vw = self.view / self.zoom * m
@@ -604,8 +612,9 @@ class PixelRenderer:
         n = self.grid
         view = self.view
 
-        season = season_of(world.generation)
-        self._terrain_key = (season, season_stage(world.generation) if season in ("summer", "autumn", "winter") else 0)
+        if config.SEASONS_ENABLED:          # 季節OFFのときは ("spring", 0) のまま = 地形は春の色に固定
+            season = season_of(world.generation)
+            self._terrain_key = (season, season_stage(world.generation) if season in ("summer", "autumn", "winter") else 0)
         self._draw_terrain(screen, ticks)
 
         # 画面に映るマスの範囲
@@ -627,9 +636,11 @@ class PixelRenderer:
             # --- 俯瞰: 種類別の色の点 (肉食を後から描いて埋もれないようにする) ---
             herbs = [o for o in visible if o.org_type == "herbivore"]
             carns = [o for o in visible if o.org_type != "herbivore"]
+            # 草食は白い点に黒い輪郭 (雪の白に埋もれないように)。輪郭を先にまとめて描き、隣の輪郭で白が消えないようにする
             for o in herbs:
-                sx, sy = o.y * z - self.off_x, o.x * z - self.off_y
-                screen.fill(DOT_HERB, (sx, sy, 3, 3))
+                screen.fill(DOT_EDGE, (o.y * z - self.off_x, o.x * z - self.off_y, 4, 4))
+            for o in herbs:
+                screen.fill(DOT_HERB, (o.y * z - self.off_x + 1, o.x * z - self.off_y + 1, 2, 2))
             for o in carns:
                 sx, sy = o.y * z - self.off_x, o.x * z - self.off_y
                 screen.fill(DOT_CARN, (sx, sy, 4, 4))

@@ -3,7 +3,6 @@ import pygame
 
 from navigator_explainer import NavigatorExplainer, PROFILE_NAMES
 from status_panel import StatusPanel as DetailedPanel
-from ai_navigator import AINavigatorView
 
 
 class NavigatorPanel:
@@ -15,7 +14,7 @@ class NavigatorPanel:
         self.small = self.detail._font(13)
         self.heading = self.detail._font(20)
         self.selected = None
-        self.open = False          # 神様モード開始時は元の情報パネルを表示 (「解説」ボタン/Nキーで開く)
+        self.open = False          # 観察モード開始時は元の情報パネルを表示 (「解説」ボタン/Nキーで開く)
         self.view = 'overview'
         self.close_rect = pygame.Rect(self.rect.right - 65, 12, 53, 28)
         self.detail_rect = pygame.Rect(self.rect.right - 128, 12, 56, 28)
@@ -24,23 +23,18 @@ class NavigatorPanel:
         self.layouts = []
         self._world = None
         self._token = None
-        self.ai = AINavigatorView(self.rect)
-        self.ai_rect = pygame.Rect(self.rect.right - 68, 46, 56, 25)
 
     def _sync_selection(self, org):
         if org is not None and not org.alive:
             org = None
         if org is not self.selected:
             self.selected = org
-            if self.view != 'ai':
-                self.view = 'overview'
+            self.view = 'overview'
             if org is not None:
                 self.open = True
 
-    def handle_event(self, event, org, world=None):
+    def handle_event(self, event, org):
         self._sync_selection(org)
-        if world is not None:
-            self.ai.controller.sync(world, org)
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_n:
                 self.open = not self.open
@@ -62,12 +56,6 @@ class NavigatorPanel:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if self.close_rect.collidepoint(event.pos):
                         self.open = False
-                    elif self.view == 'ai' and self.detail_rect.collidepoint(event.pos):
-                        self.view = 'overview'
-                    elif self.ai_rect.collidepoint(event.pos):
-                        self.view = 'ai'
-                    elif self.view == 'ai':
-                        self.ai.handle_event(event)
                     elif self.selected is not None and self.detail_rect.collidepoint(event.pos):
                         self.view = 'detail'
                         self.detail.open = True
@@ -141,23 +129,16 @@ class NavigatorPanel:
         for i, line in enumerate(lines):
             screen.blit(font.render(line, True, (231, 240, 226)), (bubble.x + 10, bubble.y + 9 + i * line_height))
 
-    def close(self):
-        self.ai.controller.close()
-
     def draw(self, screen, org, world):
         if org is not None and (not org.alive or org not in world.organisms):
             org = None
         self._sync_selection(org)
-        self.ai.controller.sync(world, org)
         if not self.open:
             return
         if self.view == 'detail' and org is not None:
             self.detail.draw(screen, org, world)
             return
         self._refresh(world, org)
-        if self.view == 'ai':
-            self.ai.draw(screen, self, world, org)
-            return
         pygame.draw.rect(screen, (12, 29, 23), self.rect)
         self._mascot(screen, (self.rect.x + 25, 30), (173, 209, 138))
         screen.blit(self.heading.render('リーフの観察メモ', True, (232, 242, 220)), (self.rect.x + 48, 16))
@@ -166,8 +147,7 @@ class NavigatorPanel:
             pygame.draw.rect(screen, (42, 72, 52) if enabled else (25, 43, 34), rect, border_radius=5)
             surface = self.small.render(label, True, (225, 237, 214) if enabled else (95, 119, 105))
             screen.blit(surface, surface.get_rect(center=rect.center))
-        screen.blit(self.small.render('群れと個体を観察しよう！', True, (155, 186, 165)), (self.rect.x + 12, 51))
-        self.ai._button(screen, self.small, self.ai_rect, 'AI')
+        screen.blit(self.small.render('群れと個体の「いま」を見てみよう！', True, (155, 186, 165)), (self.rect.x + 12, 51))
         self.layouts = []
         height = (self.rect.height - 120) // 3
         for i, (species, label, color) in enumerate((('herbivore','草食たち',(171, 219, 143)), ('carnivore','肉食組',(239, 190, 134)))):

@@ -33,12 +33,13 @@ class TitleScreen:
         self.mouse = pygame.mouse.get_pos()
         self.keyboard = False
         self.buttons = []
+        self.help_center, self.help_radius = (948, 52), 22      # 右上の丸い「？」ボタン (解説画面を開く)
         self._set_buttons()
 
     def _set_buttons(self):
         if self.page == "title":
             labels = [("mission", "ミッションモード"),
-                      ("god", "神様モード"), ("quit", "ゲーム終了")]
+                      ("god", "観察モード"), ("quit", "ゲーム終了")]
             self.buttons = [(key, label, pygame.Rect(320, 290 + i * 76, 360, 58))
                             for i, (key, label) in enumerate(labels)]
         else:
@@ -63,10 +64,14 @@ class TitleScreen:
             self.mouse = event.pos
             self.keyboard = False
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self._help_hit(event.pos):
+                return "help"
             for key, _, rect in self.buttons:
                 if rect.collidepoint(event.pos):
                     return self._activate(key)
         elif event.type == pygame.KEYDOWN:
+            if self.page == "title" and (event.key == pygame.K_F1 or getattr(event, "unicode", "") in ("?", "？")):
+                return "help"
             if event.key == pygame.K_ESCAPE:
                 return self._activate("back" if self.page == "mission" else "quit")
             if event.key in (pygame.K_UP, pygame.K_DOWN):
@@ -75,6 +80,12 @@ class TitleScreen:
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 return self._activate(self.buttons[self.focus][0])
         return None
+
+    def _help_hit(self, pos):
+        if self.page != "title":
+            return False
+        dx, dy = pos[0] - self.help_center[0], pos[1] - self.help_center[1]
+        return dx * dx + dy * dy <= self.help_radius ** 2
 
     def _text(self, text, size, center, color=TEXT):
         surface = self.fonts[size].render(text, True, color)
@@ -112,6 +123,12 @@ class TitleScreen:
             pygame.draw.rect(self.screen, (152, 197, 123) if active else (56, 86, 60), rect, 1, border_radius=9)
             self._text(label, 22, rect.center)
         self._text("マウスで選択  /  ↑↓・Enterでも操作できます", 14, (500, 557), MUTED)
+        if self.page == "title":
+            hover = self._help_hit(self.mouse)
+            pygame.draw.circle(self.screen, (51, 96, 56) if hover else (22, 49, 33), self.help_center, self.help_radius)
+            pygame.draw.circle(self.screen, (152, 197, 123) if hover else (56, 86, 60), self.help_center, self.help_radius, 2)
+            self._text("？", 28, self.help_center)
+            self._text("解説", 14, (self.help_center[0], self.help_center[1] + 36), MUTED)
 
 
 def show_title_screen():
@@ -123,6 +140,12 @@ def show_title_screen():
         while True:
             for event in pygame.event.get():
                 action = menu.handle_event(event)
+                if action == "help":                      # 「？」→ 解説画面 → 戻ったらタイトル画面のまま
+                    from help_screen import show_help_screen
+                    if show_help_screen() == "quit":
+                        return "quit"
+                    menu.mouse = pygame.mouse.get_pos()
+                    break
                 if action:
                     return action
             menu.draw()

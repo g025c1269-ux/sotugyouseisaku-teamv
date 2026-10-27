@@ -90,7 +90,7 @@ class StatusPanel:
         zones = {'grassland':'草原', 'river':'川', 'mountain':'山', 'desert':'砂漠', 'sea':'海'}
         paragraphs = [f"種類：{r['species_label']} / {'生存' if state['alive'] else '死亡'}",
                       f"エネルギー：{state['energy']:.3f} / {state['max_energy']:.3f}",
-                      f"年齢：{state['age']} / 寿命 {state['max_age']} ステップ",
+                      f"行動数：{state['age']} / {state['max_age']}",
                       f"行動方式：{r['mode_label']}",
                       f"現在地：{zones.get(state['zone'], state['zone'])} ({state['x']}, {state['y']})",
                       '【現在の能力・評価】']
