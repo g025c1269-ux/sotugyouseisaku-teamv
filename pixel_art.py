@@ -21,7 +21,7 @@ import random
 
 import numpy as np
 import config
-from season_effects import SeasonEffects, season_of, year_of
+from season_effects import SeasonEffects, SeasonTerrain, season_of, season_stage, year_of
 
 CELL = 4                    # 地形タイルの基本ピクセル数 (俯瞰の1マス)。160マス x 4px = 640px
 ZOOM_LEVELS = (4, 16, 32)   # 1マスのピクセル数 (4=俯瞰, 16=標準, 32=接近)
@@ -232,6 +232,9 @@ class PixelRenderer:
         self.off_y = 0
 
         self.terrain = [self._build_terrain(world, frame) for frame in (0, 1)]
+        # 季節ごとの地形の色 (春=元の地形。夏秋冬は色を置き換えて作る) と、春の川の花びら
+        self.season_terrain = SeasonTerrain(pygame, self.terrain, world, self.view, TERRAIN_PALETTE)
+        self._terrain_key = ("spring", 0)
         self._labels = self._build_labels(world)
         self._berry_base = self._make_surface(BERRY, BERRY_PALETTE)
 
@@ -426,7 +429,7 @@ class PixelRenderer:
 
     def _draw_terrain(self, screen, ticks):
         pg = self.pg
-        base = self.terrain[(ticks // 600) % 2]    # 川は0.6秒ごとに波が切り替わる
+        base = self.season_terrain.surface(self._terrain_key, (ticks // 600) % 2, ticks)    # 川は0.6秒ごとに波が切り替わる
         z = self.zoom
         if z == CELL:
             screen.blit(base, (0, 0))
@@ -440,6 +443,8 @@ class PixelRenderer:
         h = min(self.grid * CELL - by, -(-(self.view + rem_y) // s))
         sub = base.subsurface((bx, by, w, h))
         screen.blit(pg.transform.scale(sub, (w * s, h * s)), (-rem_x, -rem_y))
+        if self.show_season_fx:     # 春の川の花びら (ズームしたときだけ見える)
+            self.season_terrain.draw_river(screen, z, self.off_x, self.off_y, ticks, self._terrain_key[0])
 
     # =================================================
     # スプライト (遺伝子 → 見た目)
@@ -574,7 +579,7 @@ class PixelRenderer:
     def _draw_minimap(self, screen, world):
         pg = self.pg
         r = self.mm_rect
-        screen.blit(self._mm_base, r.topleft)
+        screen.blit(self.season_terrain.minimap(self._terrain_key, self.mm_size), r.topleft)
         m = self.mm_scale
         carns = []
         for o in world.organisms:
@@ -599,6 +604,8 @@ class PixelRenderer:
         n = self.grid
         view = self.view
 
+        season = season_of(world.generation)
+        self._terrain_key = (season, season_stage(world.generation) if season in ("summer", "autumn", "winter") else 0)
         self._draw_terrain(screen, ticks)
 
         # 画面に映るマスの範囲

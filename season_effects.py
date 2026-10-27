@@ -11,12 +11,20 @@
 # 気温の上がり始め=春 / 最高=夏 / 下がり始め=秋 / 最低=冬 に一致する。
 # 季節が影響するのは気温だけ(気温の計算は world.py のまま変更なし)。
 #
+# 地形の色も季節で変わる (SeasonTerrain。見た目だけ):
+#   春: そのまま / 夏: 草原が濃い緑 / 秋: 枯れ草の茶色 + 落ち葉の点
+#   冬: 雪が世代ごとに積もっていく。草原はほぼ真っ白、山は岩肌が残る
+#       (山と平原を見分けるため。詳細は recolor_terrain のコメント)
+#   川: 春だけ桜の花びらが流れる (ズームしたときだけ見える)
+#
 # 乱数は専用の random.Random を使うので、np.random や random の
 # グローバル状態(=シミュレーションの再現性)には触れない。
 # =============================================
 
 import math
 import random
+
+import numpy as np
 
 import config
 
@@ -49,6 +57,16 @@ def year_of(generation):
 def season_label(generation):
     """表示用の「N年目 春」の文字列"""
     return f"{year_of(generation)}年目 {SEASON_NAMES_JA[season_of(generation)]}"
+
+
+def season_stage(generation, stages=3):
+    """季節の中の進み具合を 0〜stages-1 で返す (冬の積雪量に使う)。
+    SEASON_CYCLE=12 なら冬の3世代が 0, 1, 2 になる。"""
+    cycle = max(1, config.SEASON_CYCLE)
+    per = cycle / 4
+    within = ((generation - 1) % cycle) - per * SEASONS.index(season_of(generation))
+    frac = min(1.0, (within + 1) / per)
+    return max(0, min(stages - 1, math.ceil(frac * stages - 1e-9) - 1))
 
 
 # ---------------------------------------------
@@ -405,3 +423,289 @@ class SeasonEffects:
                 pg.draw.rect(screen, (255, 255, 255), cell.inflate(2, 4), 2)
             else:
                 pg.draw.rect(screen, tuple(int(c * 0.4) for c in color), cell)
+
+
+# =============================================
+# 季節ごとの地形の色
+#   pixel_art.py が1枚に焼き込んだ地形画像の「色」を置き換えて作る。
+#   タイルの絵柄・境界のにじみはそのまま使うので、地形の形は変わらない。
+# =============================================
+FLOWER_COLORS = ((255, 120, 160), (255, 235, 90), (255, 255, 255))   # 草原の花 (pixel_art.pyのタイルと同じ値)
+MOUNTAIN_SPECK = (240, 240, 250)                                     # 山のタイルの白い点
+
+SUMMER_GRASS = {"base": (68, 158, 46), "dark": (48, 128, 40), "light": (96, 186, 62)}       # 夏の終わりの濃い緑
+AUTUMN_GRASS = {"base": (170, 136, 52), "dark": (136, 102, 40), "light": (205, 170, 80)}    # 秋の終わりの枯れ草 (黄土色)
+AUTUMN_GREEN = {"base": (112, 150, 60), "dark": (88, 122, 48), "light": (136, 172, 78)}     # 秋に残る緑
+# 季節の中の段階ごとの進み具合 (0=前の季節の色 〜 1=その季節の最終色)。急に色が変わらないよう少しずつ変える
+SUMMER_PROGRESS = (0.45, 0.75, 1.0)          # 春の若草色 → 夏の濃い緑
+AUTUMN_PROGRESS = (0.40, 0.70, 1.0)          # 夏の濃い緑 → 秋の枯れ草
+AUTUMN_GREEN_COVER = (0.20, 0.12, 0.07)      # 秋に緑が残るところの割合 (だんだん減る。まばらな塊で残る)
+AUTUMN_MOUNTAIN = {"base": (122, 96, 84), "dark": (88, 66, 56), "light": (160, 136, 120)}   # 枯れ草と混ざらないよう少し暗く
+AUTUMN_FLOWERS = ((200, 84, 36), (228, 152, 40), (150, 62, 30))                             # 花 → 落ち葉の色
+WINTER_BARE_GRASS = {"base": (112, 132, 76), "dark": (92, 112, 64), "light": (134, 152, 92)}  # 雪の積もっていない枯れ草
+
+# 冬の積雪率 (草原, 山, 砂漠) × 3段階。冬の進行に合わせて 0 → 1 → 2 と積もっていく。
+#   山は最大でも6割ちょっとしか雪で覆わない。残りは岩肌が出たままなので、
+#   ほぼ真っ白になる草原と見分けがつく。
+WINTER_COVER = ((0.50, 0.30, 0.12), (0.80, 0.48, 0.20), (1.00, 0.62, 0.28))
+
+
+def make_noise(size, seed=20240615):
+    """雪の積もり方を決める固定の模様。専用のRandomStateなので np.random のシードには触れない。
+    u: 0〜1に均した「塊」ノイズ (u < 積雪率 のところに雪が積もる) / fine: 1ピクセルごとのばらつき"""
+    rs = np.random.RandomState(seed)
+    fine = rs.rand(size, size)
+    block = 6
+    n = -(-size // block)
+    blob = np.kron(rs.rand(n, n), np.ones((block, block)))[:size, :size]
+    patch = 0.65 * blob + 0.35 * fine
+    order = patch.ravel().argsort()
+    u = np.empty(patch.size)
+    u[order] = np.linspace(0.0, 1.0, patch.size)
+    return u.reshape(size, size), fine
+
+
+def _color_key(c):
+    return (c[0] << 16) | (c[1] << 8) | c[2]
+
+
+def _mix(c1, c2, t):
+    return tuple(int(round(c1[i] + (c2[i] - c1[i]) * t)) for i in range(3))
+
+
+def recolor_terrain(arr, season, stage, palette, u, fine):
+    """地形の画像(配列 [x][y][rgb])を季節の色に置き換えて返す。pygameに依存しない。
+
+    冬は草原・山・砂漠で雪のかぶり方を変える:
+      草原: ほぼ全面が白い雪 (明るい白 + 薄い青の影 + 霜をかぶった草先)
+      山  : 青みのある雪 + 岩肌が3〜7割残る。稜線の影は暗い岩色、日の当たる面は真っ白
+            → 「白い雪」と「岩の暗い色」が混ざり、平らな白い草原と一目で違う
+      砂漠: うっすら雪化粧 (大半は砂のまま)
+    川と海は変えない。
+    """
+    arr = np.asarray(arr).astype(np.int32)
+    key = (arr[..., 0] << 16) | (arr[..., 1] << 8) | arr[..., 2]
+    out = arr.copy()
+
+    def at(c):
+        return key == _color_key(c)
+
+    g = {k: at(palette["grassland"][k]) for k in ("base", "dark", "light")}
+    m = {k: at(palette["mountain"][k]) for k in ("base", "dark", "light")}
+    d = {k: at(palette["desert"][k]) for k in ("base", "dark", "light")}
+    flowers = [at(c) for c in FLOWER_COLORS]
+    flowers_any = flowers[0] | flowers[1] | flowers[2]
+
+    if season == "summer":
+        t = SUMMER_PROGRESS[max(0, min(len(SUMMER_PROGRESS) - 1, stage))]
+        for k in g:
+            out[g[k]] = _mix(palette["grassland"][k], SUMMER_GRASS[k], t)
+    elif season == "autumn":
+        i = max(0, min(len(AUTUMN_PROGRESS) - 1, stage))
+        t = AUTUMN_PROGRESS[i]
+        for k in g:
+            out[g[k]] = _mix(SUMMER_GRASS[k], AUTUMN_GRASS[k], t)
+        # 緑の名残: 塊ノイズの上位 (u が大きい) ところだけ、まばらに緑のまま残す
+        green = (g["base"] | g["dark"] | g["light"]) & (u >= 1.0 - AUTUMN_GREEN_COVER[i])
+        for k in g:
+            out[g[k] & green] = AUTUMN_GREEN[k]
+        for mask, color in zip(flowers, AUTUMN_FLOWERS):
+            out[mask] = color
+        for k in m:
+            out[m[k]] = _mix(palette["mountain"][k], AUTUMN_MOUNTAIN[k], t)
+        out[g["base"] & ~green & (fine < 0.035)] = (196, 90, 36)             # 散らばる落ち葉
+        out[g["base"] & ~green & (fine >= 0.035) & (fine < 0.06)] = (168, 52, 34)
+    elif season == "winter":
+        cover_g, cover_m, cover_d = WINTER_COVER[max(0, min(len(WINTER_COVER) - 1, stage))]
+        # --- 草原 ---
+        grass_any = g["base"] | g["dark"] | g["light"] | flowers_any
+        snow_g = grass_any & (u < cover_g)
+        bare_g = grass_any & ~snow_g
+        for k in g:
+            out[bare_g & g[k]] = WINTER_BARE_GRASS[k]
+        out[bare_g & flowers_any] = WINTER_BARE_GRASS["base"]
+        out[snow_g & g["base"]] = (244, 247, 252)
+        out[snow_g & g["base"] & (fine < 0.07)] = (230, 238, 249)
+        out[snow_g & (g["dark"] | flowers_any)] = (222, 233, 247)
+        out[snow_g & g["light"]] = (186, 214, 172)
+        # --- 山 ---
+        snow_m = m["base"] & (u < cover_m)
+        out[m["base"]] = (116, 94, 86)                                       # まず岩肌
+        out[snow_m] = (212, 225, 243)                                        # 青みのある雪
+        out[snow_m & (fine > 0.9)] = (188, 205, 229)
+        out[m["dark"]] = (78, 62, 60)
+        out[m["light"]] = (250, 252, 255)
+        out[at(MOUNTAIN_SPECK)] = (255, 255, 255)
+        # --- 砂漠 ---
+        snow_d = (d["base"] | d["dark"] | d["light"]) & (u < cover_d)
+        out[snow_d & d["base"]] = (240, 244, 250)
+        out[snow_d & (d["dark"] | d["light"])] = (224, 232, 245)
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
+RIVER_PETAL = [
+    ".pp.",
+    "pwpp",
+    ".pd.",
+]
+
+
+class _RiverPetal:
+    __slots__ = ("cell", "nxt", "prev", "dir", "t", "speed", "phase", "angle", "spin")
+
+
+class SeasonTerrain:
+    """季節ごとの地形画像の管理と、春の川の花びら。"""
+    FADE_MS = 1200         # 季節が変わるときの色のなじませ時間
+    RIVER_PETALS = 70      # 川に浮かべる花びらの数
+
+    def __init__(self, pygame, base_frames, world, view, palette):
+        self.pg = pygame
+        self.base = base_frames        # [川の波0, 川の波1] の春(元)の地形
+        self.view = view
+        self.palette = palette
+        self.noise = None
+        self._cache = {}
+        self._mini = {}
+        self._cur = None
+        self._prev = None
+        self._fade_t0 = 0
+        self._petal_sprites_cache = {}
+        self._init_river(world)
+
+    # ---------------- 地形の色 ----------------
+    def _get(self, key, frame):
+        cached = self._cache.get((key, frame))
+        if cached is not None:
+            return cached
+        season, stage = key
+        if season == "spring":
+            surf = self.base[frame]
+        else:
+            if self.noise is None:
+                self.noise = make_noise(self.view)
+            pg = self.pg
+            out = recolor_terrain(pg.surfarray.array3d(self.base[frame]), season, stage,
+                                  self.palette, *self.noise)
+            surf = self.base[frame].copy()
+            pg.surfarray.blit_array(surf, out)
+        self._cache[(key, frame)] = surf
+        return surf
+
+    def surface(self, key, frame, ticks):
+        """key=(季節, 段階) の地形画像。季節が変わった直後は前の色からなじませる。"""
+        if key != self._cur:
+            if self._cur is not None:
+                self._prev, self._fade_t0 = self._cur, ticks
+            self._cur = key
+        cur = self._get(key, frame)
+        if self._prev is None:
+            return cur
+        alpha = (ticks - self._fade_t0) / self.FADE_MS
+        if alpha >= 1.0:
+            self._prev = None
+            return cur
+        mixed = self._get(self._prev, frame).copy()
+        cur.set_alpha(int(255 * alpha))
+        mixed.blit(cur, (0, 0))
+        cur.set_alpha(255)
+        return mixed
+
+    def minimap(self, key, size):
+        """ミニマップ用 (季節の色に合わせる)"""
+        mini = self._mini.get((key, size))
+        if mini is None:
+            mini = self.pg.transform.scale(self._get(key, 0), (size, size))
+            self._mini[(key, size)] = mini
+        return mini
+
+    # ---------------- 春の川の花びら ----------------
+    def _init_river(self, world):
+        n = config.GRID_SIZE
+        self.river = {(r, c) for r in range(n) for c in range(n) if world.get_zone(r, c) == "river"}
+        self.river_level = 0.0
+        self.petals = []
+        cells = sorted(self.river)
+        rng = random.Random(777)       # シミュレーションの乱数とは独立
+        self._rng = rng
+        for _ in range(min(self.RIVER_PETALS, len(cells) // 4)):
+            p = _RiverPetal()
+            p.cell = rng.choice(cells)
+            p.prev = None
+            p.dir = rng.choice(((1, 0), (-1, 0), (0, 1), (0, -1)))
+            p.t = rng.random()
+            p.speed = rng.uniform(0.004, 0.010)      # 1フレームに進むマス数 (ゆっくり流れる)
+            p.phase = rng.uniform(0, math.tau)
+            p.angle = rng.uniform(0, 360)
+            p.spin = rng.uniform(-25, 25)
+            p.nxt = self._pick_next(p)
+            self.petals.append(p)
+
+    def _pick_next(self, p):
+        """いま進んでいる向きをなるべく保ったまま、隣の川マスへ流れる。"""
+        r, c = p.cell
+        options = []
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                if (dr, dc) == (0, 0) or (r + dr, c + dc) not in self.river:
+                    continue
+                w = 0.15 + max(0.0, dr * p.dir[0] + dc * p.dir[1])
+                if (r + dr, c + dc) == p.prev:
+                    w *= 0.1
+                options.append((w, (r + dr, c + dc), (dr, dc)))
+        if not options:
+            return p.cell                  # 行き止まり: その場でゆらゆら
+        pick = self._rng.uniform(0, sum(o[0] for o in options))
+        for w, cell, direction in options:
+            pick -= w
+            if pick <= 0:
+                break
+        p.dir = direction
+        return cell
+
+    def _advance(self, p):
+        p.t += p.speed
+        while p.t >= 1.0:
+            p.t -= 1.0
+            p.prev, p.cell = p.cell, p.nxt
+            p.nxt = self._pick_next(p)
+
+    def _petal_sprites(self, scale):
+        sprites = self._petal_sprites_cache.get(scale)
+        if sprites is None:
+            pg = self.pg
+            palette = {"p": (255, 176, 196), "w": (255, 226, 233), "d": (234, 132, 164)}
+            base = pg.Surface((len(RIVER_PETAL[0]), len(RIVER_PETAL)), pg.SRCALPHA)
+            for y, row in enumerate(RIVER_PETAL):
+                for x, ch in enumerate(row):
+                    if ch in palette:
+                        base.set_at((x, y), palette[ch] + (255,))
+            base = pg.transform.scale(base, (base.get_width() * scale, base.get_height() * scale))
+            sprites = [pg.transform.rotate(base, 45 * i) for i in range(8)]
+            self._petal_sprites_cache[scale] = sprites
+        return sprites
+
+    def draw_river(self, screen, zoom, off_x, off_y, ticks, season):
+        """春の間だけ、川に花びらを浮かべる。ズーム時(1マス16px以上)に呼ぶ。小さく控えめ。"""
+        target = 1.0 if season == "spring" else 0.0
+        self.river_level += max(-0.02, min(0.02, target - self.river_level))
+        for p in self.petals:
+            self._advance(p)
+        if self.river_level <= 0.001:
+            return
+        pg, view = self.pg, self.view
+        sprites = self._petal_sprites(max(1, zoom // 8))
+        alpha = int(255 * self.river_level)
+        t = ticks / 1000.0
+        old_clip = screen.get_clip()
+        screen.set_clip(pg.Rect(0, 0, view, view))
+        for p in self.petals:
+            row = p.cell[0] + (p.nxt[0] - p.cell[0]) * p.t
+            col = p.cell[1] + (p.nxt[1] - p.cell[1]) * p.t
+            px = (col + 0.5) * zoom - off_x + math.sin(t * 1.3 + p.phase) * zoom * 0.06   # 水面でゆらゆら
+            py = (row + 0.5) * zoom - off_y + math.cos(t * 1.1 + p.phase) * zoom * 0.05
+            if -20 < px < view + 20 and -20 < py < view + 20:
+                sprite = sprites[int(((p.angle + t * p.spin) % 360) / 45) % 8]
+                sprite.set_alpha(alpha)
+                screen.blit(sprite, sprite.get_rect(center=(int(px), int(py))))
+        screen.set_clip(old_clip)
