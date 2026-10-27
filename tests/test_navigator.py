@@ -107,6 +107,8 @@ class NavigatorLayoutTests(unittest.TestCase):
         self.pg = pygame
         self.screen = pygame.display.set_mode((1040, 640))
         self.panel = NavigatorPanel((640, 0, 400, 640))
+        self.assertFalse(self.panel.open)  # latest main opens the legacy panel first
+        self.panel.open = True
         self.world = SimpleNamespace(organisms=[animal(), animal('carnivore')], step_count=0)
 
     def tearDown(self):

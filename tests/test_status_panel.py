@@ -83,6 +83,13 @@ class StatusPanelTests(unittest.TestCase):
             if frames > 180:
                 self.fail('Integration did not finish')
             scope = inspect.currentframe().f_back.f_locals
+            # Latest main starts with the original info panel; open the navigator first.
+            if 'status_panel' in scope and not getattr(flip, '_opened_navigator', False):
+                initial_panel = scope['status_panel']
+                self.assertFalse(initial_panel.open)
+                click(initial_panel.close_rect.center)
+                flip._opened_navigator = True
+                return
             panel = scope['status_panel']
             selected = scope['selected_org']
             if stage == 0:

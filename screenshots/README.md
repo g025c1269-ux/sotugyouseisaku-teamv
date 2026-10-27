@@ -1,5 +1,28 @@
 # ゲーム画面のスクリーンショット
 
+## 年間総括（通信モック）
+
+最新main 5ff86e9の計算・描画を保った年間総括版です。実際のmain.pyをSDL offscreenで動かし、通信モックの固定文で撮影しました。本物のQwenが生成した文章ではありません。撮影用テストでは1世代のステップ数だけを一時的に2へ短縮し、**12世代で1年**の区切りを保っています。リポジトリのconfig.pyは変更していません。
+
+- [年間総括の生成待ち](31_annual_pending_mock.png)
+- [1年目の総括・履歴ボタン](32_annual_completed_mock.png)
+- [維持した個体解説](33_annual_individual_mock.png)
+
+PNGは各1040×640。ZIPにも含まれます。[年間総括の仕様とWindows実機確認](../docs/ollama_navigator.md)を参照してください。
+
+## 初期OllamaナビのUI確認（過去版・通信モック）
+
+以下は年間総括へ変更する前の `feature/ollama-navigator` の実際のmain.pyをSDL offscreenで動かし、Ollamaの代わりに固定文を返す通信モックで撮影した1040×640 PNGです。**本物のqwen3:4bが生成した文章ではありません。** マップ・個体・操作は通常のゲーム処理を使用しています。
+
+- [生成待ち中も操作・シミュレーションが続く画面](27_ai_game_pending_mock.png)
+- [草食全体のAI画面](28_ai_game_herbivore_mock.png)
+- [肉食全体のAI画面](29_ai_game_carnivore_mock.png)
+- [選択個体のAI画面](30_ai_game_individual_mock.png)
+
+[Windows実機でqwen3:4bを確認する手順](../docs/ollama_navigator.md)を使って、実際の生成時間と文章を確認してください。
+
+以下はこれまでの開発時点の記録です。
+
 Pygameの実際の描画内容を、画面接続のないクラウド環境でSDLの `offscreen` ドライバーを使って保存しました。ゲームのソースコードや計算処理は変更していません。
 
 ## 起動直後・操作パネル
