@@ -26,7 +26,7 @@ from ollama_explainer import OllamaError
 from world import World
 
 COMMENT = '足の速さと川への適応がいい感じだね！移動の幅を広げやすいけど、たくさん動いた時の蓄えには気をつけよう。'
-ANNUAL_COMMENT = '草食たちは仲間の数に動きがあったね。肉食組も年初と年末で違う顔ぶれになっているよ！平均の形質の変化も観察の見どころだね。気温だけで理由は決めず、次の年も両方の群れと蓄えに注目しよう！'
+ANNUAL_COMMENT = '草食たちは年初より仲間が減ったけれど、平均の川適応は上がっているね。川を移動するときの負担を抑えやすい集団になっているのが、注目ポイントだよ！肉食組は数をほぼ保ち、平均の山適応が高めになったみたい。山での移動のしやすさを見てみよう。今年は気温にも変化があったけれど、仲間の増減の理由を気温だけで決めることはできないよ。来年も両方の群れの数と、地形への適応を追いかけていこう！'
 
 
 class ControlledClient:
@@ -373,6 +373,12 @@ class AIPanelTests(unittest.TestCase):
         self.assertEqual(history.displayed()['context']['year'], 2)
         for bubble, font, lines, line_height in self.panel.layouts:
             self.assertLessEqual(len(lines) * line_height, bubble.height - 18)
+        # The expanded annual comment must fit at the maximum accepted length too.
+        self.panel.layouts = []
+        self.panel._card(self.screen, 225, 240, '年間総括', '', '草食と肉食' + 'あ' * 185, (173, 209, 138))
+        for bubble, font, lines, line_height in self.panel.layouts:
+            self.assertLessEqual(len(lines) * line_height, bubble.height - 18)
+            self.assertTrue(all(font.size(line)[0] <= bubble.width - 20 for line in lines))
 
 
 class GameAITests(unittest.TestCase):

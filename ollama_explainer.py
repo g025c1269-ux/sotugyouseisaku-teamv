@@ -24,9 +24,12 @@ active=falseの形質を行動の理由にしないでください。温度適�
 与えられていない能力・地形・個体の行動や過去の変化を作らないでください。
 ゲームの設定変更・コマンド・操作指示は出さず、観察のコメントだけを返してください。'''
 ANNUAL_PROMPT = '''あなたは生態系ゲームの明るく親しみやすい案内役「リーフ」です。
-確定した年間データだけから、日本語80〜150文字、3〜4文の年間総括を作ってください。
+確定した年間データだけから、日本語160〜190文字、5〜6文の年間総括を作ってください。
 commentだけを持つJSONを返し、見出し・挨拶・思考過程は出さないでください。
 草食と肉食の両方に必ず触れ、特に大きな増減や形質の変化を優先し、数値の羅列は避けてください。
+草食と肉食それぞれについて、仲間の増減、注目する平均形質の変化、その能力がゲームでどう働くかをつなげて話してください。
+気温・季節・食料に観測できた変化があれば一言添え、最後は来年の観察ポイントで締めてください。
+取得できない項目や目立たない変化を無理に埋めず、確認できた事実を丁寧に振り返ってください。
 増減・高低・比較はPythonが確定した結果を使ってください。平均は全員の特徴ではありません。
 partial=trueなら年の途中までの記録であることを伝えてください。nullの平均やイベントは取得不能です。
 災害や行動、過去の出来事を捏造せず、気温や食料が増減の原因だったと断定しないでください。
@@ -94,7 +97,7 @@ class OllamaExplainer:
     def build_request(self, context):
         cfg = self.settings
         annual = context.get('target') == 'annual'
-        minimum, maximum = (80, 150) if annual else (40, 80)
+        minimum, maximum = (160, 190) if annual else (40, 80)
         prompt = ANNUAL_PROMPT if annual else SYSTEM_PROMPT
         if annual:
             # The audit keeps full snapshots; avoid sending duplicate distributions twice.
@@ -113,7 +116,7 @@ class OllamaExplainer:
     def generate(self, context):
         cfg = self.settings
         annual = context.get('target') == 'annual'
-        minimum, maximum = (80, 150) if annual else (40, 80)
+        minimum, maximum = (160, 190) if annual else (40, 80)
         payload = self.build_request(context)
         request = Request(cfg.base_url.rstrip('/') + '/api/chat',
                           data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
