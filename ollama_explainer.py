@@ -23,10 +23,23 @@ active=falseの形質を行動の理由にしないでください。温度適�
 個体解説では集団との比較も使ってください。将来の絶滅・繁栄・狩りの成功は断定しません。
 与えられていない能力・地形・個体の行動や過去の変化を作らないでください。
 ゲームの設定変更・コマンド・操作指示は出さず、観察のコメントだけを返してください。'''
+ANNUAL_PROMPT = '''あなたは生態系ゲームの明るく親しみやすい案内役「リーフ」です。
+確定した年間データだけから、日本語80〜150文字、3〜4文の年間総括を作ってください。
+commentだけを持つJSONを返し、見出し・挨拶・思考過程は出さないでください。
+草食と肉食の両方に必ず触れ、特に大きな増減や形質の変化を優先し、数値の羅列は避けてください。
+増減・高低・比較はPythonが確定した結果を使ってください。平均は全員の特徴ではありません。
+partial=trueなら年の途中までの記録であることを伝えてください。nullの平均やイベントは取得不能です。
+災害や行動、過去の出来事を捏造せず、気温や食料が増減の原因だったと断定しないでください。
+active=falseの形質を行動の理由にしないでください。温度適性が高いほど寒さに強いとは限りません。
+最後に次の観察への期待や注意を一言添えても構いません。未来の繁栄や絶滅は断定しません。
+設定変更や操作コマンドは出さず、表示用の文章だけを作ってください。'''
 
 
 class OllamaError(Exception):
     """Safe Japanese message suitable for the UI."""
+    def __init__(self, message, raw_response=None):
+        super().__init__(message)
+        self.raw_response = raw_response
 
 
 @dataclass(frozen=True)
@@ -78,22 +91,36 @@ class OllamaExplainer:
     def __init__(self, settings=None):
         self.settings = settings or OllamaSettings.load()
 
-    def generate(self, context):
+    def build_request(self, context):
         cfg = self.settings
+        annual = context.get('target') == 'annual'
+        minimum, maximum = (80, 150) if annual else (40, 80)
+        prompt = ANNUAL_PROMPT if annual else SYSTEM_PROMPT
+        if annual:
+            # The audit keeps full snapshots; avoid sending duplicate distributions twice.
+            context = {k: v for k, v in context.items() if k not in ('start', 'end')}
         payload = {
             'model': cfg.model, 'think': False, 'stream': False, 'keep_alive': cfg.keep_alive,
-            'messages': [{'role': 'system', 'content': SYSTEM_PROMPT},
-                         {'role': 'user', 'content': json.dumps(context, ensure_ascii=False, allow_nan=False)}],
-            'format': {'type': 'object', 'properties': {'comment': {'type': 'string', 'minLength': 40, 'maxLength': 80}},
+            'messages': [{'role': 'system', 'content': prompt},
+                         {'role': 'user', 'content': json.dumps(context, ensure_ascii=False, allow_nan=False, separators=(',', ':'))}],
+            'format': {'type': 'object', 'properties': {'comment': {'type': 'string', 'minLength': minimum, 'maxLength': maximum}},
                        'required': ['comment'], 'additionalProperties': False},
-            'options': {'num_predict': cfg.num_predict, 'num_ctx': cfg.num_ctx,
+            'options': {'num_predict': min(512, cfg.num_predict * 2) if annual else cfg.num_predict, 'num_ctx': cfg.num_ctx,
                         'num_thread': cfg.num_thread, 'temperature': 0.4},
         }
+        return payload
+
+    def generate(self, context):
+        cfg = self.settings
+        annual = context.get('target') == 'annual'
+        minimum, maximum = (80, 150) if annual else (40, 80)
+        payload = self.build_request(context)
         request = Request(cfg.base_url.rstrip('/') + '/api/chat',
                           data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
                           headers={'Content-Type': 'application/json'}, method='POST')
         # Never send local observations through a system HTTP proxy or redirect.
         opener = build_opener(ProxyHandler({}), _NoRedirect())
+        raw = b''
         try:
             with opener.open(request, timeout=cfg.timeout_seconds) as response:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
@@ -113,9 +140,11 @@ class OllamaExplainer:
             if not isinstance(text, str):
                 raise ValueError('Invalid comment')
             text = re.sub(r'\s+', ' ', text).strip()
-            if (not 40 <= len(text) <= 80 or not re.search(r'[ぁ-んァ-ン一-龯]', text)
+            if (not minimum <= len(text) <= maximum or not re.search(r'[ぁ-んァ-ン一-龯]', text)
                     or '<' in text or '>' in text or any(ord(c) < 32 for c in text)):
                 raise ValueError('Invalid comment')
+            if annual and ('草食' not in text or '肉食' not in text):
+                raise ValueError('Both species must be mentioned')
             return text
         except HTTPError as exc:
             if exc.code == 404:
@@ -128,4 +157,4 @@ class OllamaExplainer:
                 raise OllamaError('AIの返事が時間切れだよ。少し待ってから再更新してね。') from exc
             raise OllamaError('Ollamaにつながらないよ。Ollamaを起動してから更新してね。') from exc
         except (ValueError, KeyError, TypeError, UnicodeError, OSError, HTTPException) as exc:
-            raise OllamaError('AIの返事を使えなかったよ。ルール解説を表示するね。') from exc
+            raise OllamaError('AIの返事を使えなかったよ。ルール解説を表示するね。', raw.decode('utf-8', errors='replace')) from exc

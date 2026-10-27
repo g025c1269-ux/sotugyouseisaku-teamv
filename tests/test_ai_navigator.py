@@ -26,6 +26,7 @@ from ollama_explainer import OllamaError
 from world import World
 
 COMMENT = '足の速さと川への適応がいい感じだね！移動の幅を広げやすいけど、たくさん動いた時の蓄えには気をつけよう。'
+ANNUAL_COMMENT = '草食たちは仲間の数に動きがあったね。肉食組も年初と年末で違う顔ぶれになっているよ！平均の形質の変化も観察の見どころだね。気温だけで理由は決めず、次の年も両方の群れと蓄えに注目しよう！'
 
 
 class ControlledClient:
@@ -38,11 +39,10 @@ class ControlledClient:
     def generate(self, context):
         self.calls.append(context)
         self.entered.set()
-        if not self.release.wait(5):
-            raise OllamaError('テスト用待機が時間切れ')
+        self.release.wait()  # Deterministic gate; teardown always releases the daemon worker.
         if self.error:
             raise OllamaError('Ollamaにつながらないよ。起動してね。')
-        return COMMENT
+        return ANNUAL_COMMENT if context.get('target') == 'annual' else COMMENT
 
 
 class ContextTests(unittest.TestCase):
@@ -174,6 +174,7 @@ class ControllerTests(unittest.TestCase):
         self.world = World()
         self.client = ControlledClient()
         self.nav = AINavigator(self.client)
+        self.nav.target = 'herbivore'  # legacy client entry point; UI uses annual/individual
         self.nav.sync(self.world, self.world.organisms[0])
 
     def tearDown(self):
@@ -285,6 +286,7 @@ class AIPanelTests(unittest.TestCase):
         self.client = ControlledClient()
         self.panel.ai.controller.client = self.client
         self.out = tempfile.TemporaryDirectory()
+        self.panel.ai.controller.annual.log_path = Path(self.out.name) / 'annual.json'
 
     def tearDown(self):
         self.client.release.set()
@@ -298,32 +300,27 @@ class AIPanelTests(unittest.TestCase):
     def draw(self, selected=None):
         self.panel.draw(self.screen, selected, self.world)
 
-    def save(self, name):
-        out = Path(os.environ.get('AI_SCREENSHOT_DIR', self.out.name))
-        out.mkdir(parents=True, exist_ok=True)
-        pygame.image.save(self.screen, out / name)
-
-    def test_ui_switching_pending_fallback_wrap_and_map_untouched(self):
+    def test_ui_individual_pending_fallback_wrap_and_map_untouched(self):
         self.screen.fill((30, 75, 48))
         before = pygame.surfarray.array3d(self.screen)[:640].copy()
         self.panel.open = True
         self.click(self.panel.ai_rect)
-        self.assertEqual(self.panel.view, 'ai')
         self.draw()
+        self.assertEqual(self.panel.ai.controller.target, 'annual')
         self.assertFalse(self.client.calls)
-        self.click(self.panel.ai.update_rect)
+        org = self.world.organisms[0]
+        self.click(self.panel.ai.tabs['individual'], org)
+        self.draw(org)
+        self.click(self.panel.ai.update_rect, org)
         self.assertTrue(self.client.entered.wait(1))
         for _ in range(4):
             self.world.step()
-            self.draw()
+            self.draw(org)
             pygame.event.pump()
         self.assertTrue(self.panel.ai.controller.busy)
-        self.save('23_ai_pending_mock.png')
-        # All three tabs remain usable while the one request runs.
-        for target in ('carnivore', 'individual', 'herbivore'):
-            self.click(self.panel.ai.tabs[target])
-            self.draw()
-            self.assertEqual(self.panel.ai.controller.target, target)
+        for target in ('annual', 'individual'):
+            self.click(self.panel.ai.tabs[target], org)
+            self.draw(org)
             for bubble, font, lines, line_height in self.panel.layouts:
                 self.assertLessEqual(len(lines) * line_height, bubble.height - 18)
                 self.assertTrue(all(font.size(line)[0] <= bubble.width - 20 for line in lines))
@@ -331,40 +328,97 @@ class AIPanelTests(unittest.TestCase):
         self.client.release.set()
         deadline = time.monotonic() + 2
         while self.panel.ai.controller.busy and time.monotonic() < deadline:
-            self.draw()
+            self.draw(org)
             time.sleep(.002)
-        self.assertEqual(self.panel.ai.controller.comments['herbivore'].text, COMMENT)
-        self.draw()
-        self.save('24_ai_comment_mock.png')
+        self.assertEqual(self.panel.ai.controller.comments['individual'].text, COMMENT)
         self.client.error = True
-        self.click(self.panel.ai.tabs['carnivore'])
-        self.click(self.panel.ai.update_rect)
+        self.click(self.panel.ai.update_rect, org)
         deadline = time.monotonic() + 2
         while self.panel.ai.controller.busy and time.monotonic() < deadline:
-            self.draw()
+            self.draw(org)
             time.sleep(.002)
-        self.draw()
-        self.assertIn('つながらない', self.panel.ai.controller.comments['carnivore'].error)
-        self.save('25_ai_offline_fallback.png')
-        # Selecting an animal stays on the AI view and offers individual comparison.
-        org = self.world.organisms[0]
-        self.draw(org)
-        self.assertEqual(self.panel.view, 'ai')
-        self.click(self.panel.ai.tabs['individual'], org)
-        self.draw(org)
-        self.save('26_ai_individual_rule.png')
+        self.assertIn('つながらない', self.panel.ai.controller.comments['individual'].error)
         self.click(self.panel.detail_rect, org)
         self.assertEqual(self.panel.view, 'overview')
 
+    def test_history_buttons_keep_previous_while_next_year_pending(self):
+        from annual_report import AnnualRecorder
+        self.world.generation = 1
+        recorder = AnnualRecorder()
+        recorder.before_step(self.world)
+        self.world.generation = config.SEASON_CYCLE
+        recorder.before_step(self.world)
+        c = recorder.after_step(self.world, True, False, False)
+        history = self.panel.ai.controller.annual
+        for year in (1, 2):
+            context = copy.deepcopy(c)
+            context['year'] = year
+            history.add(context)
+            history.entries[year].update(status='ready', text=ANNUAL_COMMENT)
+        self.panel.open = True
+        self.click(self.panel.ai_rect)
+        self.draw()
+        self.assertEqual(history.displayed()['context']['year'], 2)
+        self.click(self.panel.ai.previous_rect)
+        self.draw()
+        self.assertEqual(history.displayed()['context']['year'], 1)
+        self.click(self.panel.ai.next_rect)
+        self.assertEqual(history.displayed()['context']['year'], 2)
+        self.click(self.panel.ai.latest_rect)
+        self.assertIsNone(history.selected_year)
+        context = copy.deepcopy(c)
+        context['year'] = 3
+        history.add(context)
+        self.draw()
+        self.assertEqual(history.displayed()['context']['year'], 2)
+        for bubble, font, lines, line_height in self.panel.layouts:
+            self.assertLessEqual(len(lines) * line_height, bubble.height - 18)
+
 
 class GameAITests(unittest.TestCase):
-    def test_actual_game_keeps_responding_and_exits_during_ai_request(self):
+    def test_finished_simulation_stays_open_for_pending_report_until_user_quits(self):
+        import main
+        np.random.seed(1000)
+        world = World()
+        client = ControlledClient()
+        real_flip = pygame.display.flip
+        frames, done_frames = 0, 0
+        old_cwd, old_temperature = Path.cwd(), config.TEMPERATURE
+        with tempfile.TemporaryDirectory() as tmp:
+            def capture():
+                nonlocal frames, done_frames
+                real_flip()
+                frames += 1
+                self.assertLess(frames, 80)
+                scope = inspect.currentframe().f_back.f_locals
+                controller = scope['status_panel'].ai.controller
+                controller.client = client
+                if scope['done']:
+                    done_frames += 1
+                    if done_frames == 4:
+                        self.assertTrue(controller.busy)
+                        client.release.set()
+                    if done_frames > 4 and not controller.busy:
+                        self.assertTrue(controller.annual.displayed()['context']['partial'])
+                        pygame.event.post(pygame.event.Event(pygame.QUIT))
+            try:
+                os.chdir(tmp)
+                with patch.object(config, 'MAX_STEPS_PER_GEN', 1), patch.object(config, 'MAX_GENERATIONS', 1), patch.object(pygame.display, 'flip', capture):
+                    main.run_with_visualization(world)
+            finally:
+                client.release.set()
+                config.TEMPERATURE = old_temperature
+                os.chdir(old_cwd)
+                pygame.quit()
+        self.assertGreater(done_frames, 4)
+
+    def test_actual_game_annual_boundary_controls_individual_and_exit(self):
         import main
         np.random.seed(1000)
         world = World()
         client = ControlledClient()
         stage, frames, pending_frames = 0, 0, 0
-        start_step = None
+        start_step = 0
         real_flip = pygame.display.flip
         old_temperature = config.TEMPERATURE
         old_cwd = Path.cwd()
@@ -386,55 +440,46 @@ class GameAITests(unittest.TestCase):
                 nonlocal stage, frames, pending_frames, start_step
                 real_flip()
                 frames += 1
-                self.assertLess(frames, 150)
+                self.assertLess(frames, 160)
                 scope = inspect.currentframe().f_back.f_locals
                 panel = scope['status_panel']
                 controller = panel.ai.controller
                 if stage == 0:
-                    self.assertFalse(panel.open)
                     controller.client = client
                     key(pygame.K_n)
                     click(panel.ai_rect)
+                    key(pygame.K_m)
                     stage = 1
                 elif stage == 1:
-                    self.assertEqual(panel.view, 'ai')
                     self.assertFalse(client.calls)
-                    start_step = world.step_count
-                    click(panel.ai.update_rect)
+                    self.assertTrue(scope['paused'])
+                    for _ in range(config.SEASON_CYCLE):
+                        key(pygame.K_RIGHT)
                     stage = 2
                 elif stage == 2:
                     self.assertTrue(controller.busy)
+                    self.assertEqual(list(controller.annual.entries), [1])
+                    start_step = world.step_count
+                    key(pygame.K_e)
+                    key(pygame.K_v)
+                    key(pygame.K_2)
+                    key(pygame.K_SPACE)
+                    stage = 3
+                elif stage == 3:
                     pending_frames += 1
-                    if pending_frames == 1:
-                        key(pygame.K_e)
-                        key(pygame.K_v)
-                        key(pygame.K_2)
+                    self.assertTrue(controller.busy, str((world.step_count, start_step, scope['paused'], scope['done'], controller.annual.entries)))
                     if pending_frames >= 6 and world.step_count > start_step:
                         self.assertFalse(scope['renderer'].show_food)
                         self.assertFalse(scope['renderer'].show_season_fx)
-                        save('27_ai_game_pending_mock.png')
-                        key(pygame.K_SPACE)
-                        stage = 3
-                elif stage == 3:
-                    self.assertTrue(scope['paused'])
-                    self.assertTrue(controller.busy)
-                    key(pygame.K_n)
-                    stage = 4
-                elif stage == 4:
-                    self.assertFalse(panel.open)
-                    self.assertTrue(controller.busy)
-                    key(pygame.K_n)
-                    client.release.set()
-                    stage = 5
-                elif stage == 5 and not controller.busy:
-                    self.assertEqual(controller.comments['herbivore'].text, COMMENT)
-                    save('28_ai_game_herbivore_mock.png')
-                    click(panel.ai.tabs['carnivore'])
-                    click(panel.ai.update_rect)
-                    stage = 6
-                elif stage == 6 and not controller.busy:
-                    self.assertEqual(controller.comments['carnivore'].text, COMMENT)
-                    save('29_ai_game_carnivore_mock.png')
+                        save('31_annual_pending_mock.png')
+                        if not scope['paused']:
+                            key(pygame.K_SPACE)
+                        client.release.set()
+                        stage = 4
+                elif stage == 4 and not controller.busy:
+                    self.assertEqual(controller.annual.displayed()['text'], ANNUAL_COMMENT)
+                    self.assertEqual(controller.annual.displayed()['context']['year'], 1)
+                    save('32_annual_completed_mock.png')
                     renderer = scope['renderer']
                     for org in world.organisms:
                         pos = (org.y * renderer.zoom + renderer.zoom // 2 - renderer.off_x,
@@ -445,37 +490,36 @@ class GameAITests(unittest.TestCase):
                             break
                     else:
                         self.fail('No selectable organism')
-                    stage = 7
-                elif stage == 7:
+                    stage = 5
+                elif stage == 5:
                     self.assertIsNotNone(scope['selected_org'])
-                    self.assertEqual(panel.view, 'ai')
                     click(panel.ai.tabs['individual'])
                     click(panel.ai.update_rect)
-                    stage = 8
-                elif stage == 8 and not controller.busy:
+                    stage = 6
+                elif stage == 6 and not controller.busy:
                     self.assertEqual(controller.comments['individual'].text, COMMENT)
-                    save('30_ai_game_individual_mock.png')
+                    save('33_annual_individual_mock.png')
                     client.release.clear()
                     client.entered.clear()
                     click(panel.ai.update_rect)
-                    stage = 9
-                elif stage == 9:
+                    stage = 7
+                elif stage == 7 and client.entered.is_set():
                     self.assertTrue(controller.busy)
-                    if not client.entered.is_set():
-                        return
                     pygame.event.post(pygame.event.Event(pygame.QUIT))
-                    stage = 10
+                    stage = 8
             try:
                 os.chdir(tmp)
-                with patch.object(pygame.display, 'flip', capture):
+                # Shorten steps per generation only in this test; retain the real 12-generation year.
+                with patch.object(config, 'MAX_STEPS_PER_GEN', 2), patch.object(main, 'MAX_STEPS_PER_FRAME', 1), patch.object(pygame.display, 'flip', capture):
                     main.run_with_visualization(world)
             finally:
                 client.release.set()
                 config.TEMPERATURE = old_temperature
                 os.chdir(old_cwd)
                 pygame.quit()
-        self.assertEqual(stage, 10)
-        self.assertGreaterEqual(len(client.calls), 4)
+        self.assertEqual(stage, 8)
+        self.assertEqual(client.calls[0]['target'], 'annual')
+        self.assertEqual(sum(c['target'] == 'annual' for c in client.calls), 1)
         self.assertFalse(pygame.get_init())
 
 

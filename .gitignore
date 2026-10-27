@@ -1,5 +1,6 @@
 .venv/
 __pycache__/
+reports/
 *.py[cod]
 result_temp*.png
 experiment_results.csv

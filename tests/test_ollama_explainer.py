@@ -83,6 +83,25 @@ class OllamaClientTests(unittest.TestCase):
             self.set_comment('あ' * n)
             self.assertEqual(len(self.client.generate({})), n)
 
+    def test_annual_request_limits_both_species_and_separate_prompt(self):
+        for n in (80, 150):
+            text = '草食たちと肉食組。' + 'あ' * (n - len('草食たちと肉食組。'))
+            self.set_comment(text)
+            self.assertEqual(self.client.generate({'target': 'annual', 'year': 1}), text)
+            payload = self.calls[-1][1]
+            self.assertEqual(payload['format']['properties']['comment']['minLength'], 80)
+            self.assertEqual(payload['format']['properties']['comment']['maxLength'], 150)
+            self.assertEqual(payload['options']['num_predict'], 512)
+            self.assertIs(payload['think'], False)
+            self.assertIn('断定しない', payload['messages'][0]['content'])
+
+    def test_annual_invalid_response_is_kept_for_audit(self):
+        for text in ('あ' * 100, '草食と肉食' + 'あ' * 146, '草食と肉食' + 'あ' * 70):
+            self.set_comment(text)
+            with self.assertRaises(OllamaError) as caught:
+                self.client.generate({'target': 'annual', 'year': 1})
+            self.assertTrue(caught.exception.raw_response)
+
     def test_connection_refusal_and_timeouts_are_friendly(self):
         for exc, message in ((URLError(ConnectionRefusedError()), 'つながらない'),
                              (URLError(socket.timeout()), '時間切れ'), (socket.timeout(), '時間切れ')):

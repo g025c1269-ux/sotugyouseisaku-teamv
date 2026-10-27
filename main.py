@@ -496,7 +496,7 @@ def run_with_visualization(world):
                             extinct, done = ex2, dn2
                         else:
                             while True:
-                                step_in_gen, extinct, done = _step_simulation(world, step_in_gen, extinct, done)
+                                step_in_gen, extinct, done = status_panel.ai.controller.advance(world, _step_simulation, step_in_gen, extinct, done)
                                 if step_in_gen == 0:
                                     break
                             if world.generation not in gen_snapshots:
@@ -565,7 +565,7 @@ def run_with_visualization(world):
             if steps_to_run > 0:
                 accumulator -= steps_to_run / sps
                 for _ in range(steps_to_run):
-                    step_in_gen, extinct, done = _step_simulation(world, step_in_gen, extinct, done)
+                    step_in_gen, extinct, done = status_panel.ai.controller.advance(world, _step_simulation, step_in_gen, extinct, done)
                     if step_in_gen == 0:
                         if world.generation not in gen_snapshots:
                             gen_snapshots[world.generation] = (copy.deepcopy(world), extinct, done)
@@ -597,7 +597,8 @@ def run_with_visualization(world):
         pygame.display.flip()
         clock.tick(60)
 
-        if done and running and mode == "normal":
+        # Keep completed simulations open while annual reports can be read.
+        if done and running and mode == "normal" and not status_panel.ai.controller.annual.entries:
             pygame.time.delay(1500)
             running = False
 
