@@ -1,10 +1,10 @@
 # ECOSYSTEM — 生態系シミュレーションゲーム
 
-Python・Pygame製の共同卒業制作です。最新mainの生態系・描画を保持し、既存のタイトルとルールベース解説を接続する統合版です。
+Python・Pygame製の共同卒業制作です。最新mainの生態系・描画と既存のゲーム機能を保持し、任意で使えるOllamaのローカルAIナビを追加しています。
 
 ## ダウンロード
 
-この統合変更はPRでレビューし、**mainへマージした後**に [mainのZIP](https://github.com/g025c1269-ux/sotugyouseisaku-teamv/archive/refs/heads/main.zip) から利用できます。レビュー中は [統合ブランチのZIP](https://github.com/g025c1269-ux/sotugyouseisaku-teamv/archive/refs/heads/integration/game-features.zip) を使用してください。
+**AIナビの確認には [feature/ollama-navigatorのZIP](https://github.com/g025c1269-ux/sotugyouseisaku-teamv/archive/refs/heads/feature/ollama-navigator.zip) を使用してください。** mainには直接反映していません。レビュー・マージ後に [mainのZIP](https://github.com/g025c1269-ux/sotugyouseisaku-teamv/archive/refs/heads/main.zip) からも利用できます。
 
 ZIPを右クリックして「すべて展開」し、以前のダウンロードとは別の新しいフォルダーへ展開してください。ZIP内から直接実行せず、`main.py` と `requirements.txt` がある階層を開きます。Gitは不要です。
 
@@ -23,7 +23,26 @@ py -3.12 -m venv .venv
 
 仮想環境の有効化スクリプトは使わないため、PowerShellの実行ポリシーを変更する必要はありません。`py` が見つからない場合はPython Launcherの導入を確認してください。画面がすぐ閉じる場合も、上記PowerShellから起動するとエラーを確認できます。
 
-初回の依存パッケージ導入にはインターネットが必要です。導入後のゲーム起動に外部API・APIキー・Ollamaサーバーは不要です。日本語はシステムフォントを優先し、タイトルと解説には既存の日本語フォント同梱パッケージのフォールバックもあります。
+初回の依存パッケージ導入にはインターネットが必要です。導入後のゲーム起動にAPIキー・Ollamaサーバーは不要です。AI更新時だけローカルのOllamaを使い、停止中でもルール解説とゲームを利用できます。日本語はシステムフォントを優先し、タイトルと解説には既存の日本語フォント同梱パッケージのフォールバックもあります。
+
+## ローカルAIナビ（Ollama / qwen3:4b）
+
+1. WindowsでOllamaを起動し、PowerShellの `ollama list` に `qwen3:4b` があることを確認します。インストール済みならモデルの再取得は不要です。
+2. 上記の手順でゲームを起動し、「神様モード」へ進みます。
+3. **N** または右上の「解説」→ **AI** を押します。
+4. 「草食全体」「肉食全体」「選択個体」を切り替え、**AI解説を更新** を押します。個体解説はマップで生物を選んでから更新します。
+
+生成中もマップ操作や一時停止を使えます。自動送信・同時生成はせず、1件ずつ生成します。解説には更新した世代・ステップを表示します。新しい個体を選んだ場合は以前の個体のAI文を消し、再更新を待ちます。「観察」で従来の3つの吹き出しへ戻り、個体選択中のTabで数値・分類の詳細を確認できます。
+
+接続できない場合は案内と現在のルール解説を表示します。モデルや接続先、待ち時間は [data/ollama_config.json](data/ollama_config.json) で変更できます（標準60秒、`think: false`、出力最大256トークン、40〜80文字を検証）。追加のPythonライブラリはありません。
+
+実機で3種類の生成を確認するコマンド：
+
+```powershell
+.\.venv\Scripts\python.exe verify_ollama.py
+```
+
+これは独立した確認用ワールドを使います。クラウド環境から利用者PCのlocalhostには接続できないため、**実機qwen3:4bの応答品質・生成時間・Windows実画面は未検証**です。手順と障害時の確認は [AIナビの仕様・実機チェック](docs/ollama_navigator.md) を参照してください。
 
 ## 利用できる機能
 
@@ -36,9 +55,9 @@ py -3.12 -m venv .venv
 | 観察ナビ | 草食・肉食全体の平均・分布から短い傾向解説 |
 | 個体解説 | 選択個体の短い紹介と、数値・分類・長所・注意点の詳細 |
 | 案内役 | 葉っぱの顔アイコンと吹き出し |
-| Ollama / Qwen3 4B | 開発途中・今回の統合対象外。接続・インストール・生成AI呼び出しは行いません |
+| Ollama / Qwen3 4B | 手動更新のローカルAIナビ。両種全体・選択個体、非同期生成、ルール解説への代替。実モデルの確認はWindows実機で実施 |
 
-生態系のNN・強化学習は従来からある個体行動の計算です。ナビの文章生成はJSONとPythonの条件分岐のみです。
+生態系のNN・強化学習は従来からある個体行動の計算です。ルール解説はJSONとPythonの条件分岐で生成し、AIは表示文章だけを作ります。AIから生態系のパラメータや行動を変更する接続はありません。
 
 ## 操作
 
@@ -67,12 +86,13 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-24テストでタイトル・仮ミッション・神様モード、実イベントの選択・解説・操作、世代進行と巻き戻し、両種の現在値、全8,748件の詳細解説、乱数・個体・脳の計算への無副作用を検証します。テストの画面はSDL offscreenで実行し、結果画像は一時ディレクトリに保存されます。
+既存機能・全8,748件の詳細解説に加え、AI送信内容・3対象・エラー・タイムアウト・同時実行制限・古い個体の結果破棄・生成待ち中の操作と終了・計算への無副作用を検証します。通信テストはローカルHTTPの代役とモックを使用し、本物のAIモデルは呼びません。テスト画面はSDL offscreenで実行し、結果画像は一時ディレクトリに保存されます。
 
 クリーンなPython 3.12環境での導入とZIP展開後の起動をLinux上で検証し、主要依存のWindows 64bit用wheelの取得も確認しています。**Windows実機上での表示・手動操作は未検証**です。PRレビュー時に上記手順で確認してください。
 
 - [統合内容・ブランチ比較・検証記録](docs/integration.md)
 - [観察ナビの判定ルール](docs/navigator.md)
+- [AIナビの仕様・実機チェック](docs/ollama_navigator.md)
 - [詳細解説の仕様](docs/status_explainer.md)
 - [統合後のタイトル](screenshots/18_integrated_title.png)
 - [統合後の観察ナビ](screenshots/20_integrated_navigator.png)

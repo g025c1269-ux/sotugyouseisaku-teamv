@@ -466,7 +466,7 @@ def run_with_visualization(world):
 
     while running:
         for event in pygame.event.get():
-            if status_panel.handle_event(event, selected_org):
+            if status_panel.handle_event(event, selected_org, world):
                 continue
             if event.type == pygame.QUIT:
                 running = False
@@ -601,6 +601,7 @@ def run_with_visualization(world):
             pygame.time.delay(1500)
             running = False
 
+    status_panel.close()
     pygame.quit()
     save_result_graph(world)
 

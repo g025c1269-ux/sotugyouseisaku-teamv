@@ -61,6 +61,13 @@ class GameIntegrationTests(unittest.TestCase):
             frames += 1
             self.assertLess(frames, 240)
             scope = inspect.currentframe().f_back.f_locals
+            # Latest main starts with the original info panel; open the navigator first.
+            if 'status_panel' in scope and not getattr(capture, '_opened_navigator', False):
+                initial_panel = scope['status_panel']
+                self.assertFalse(initial_panel.open)
+                click(initial_panel.close_rect.center)
+                capture._opened_navigator = True
+                return
             if stage == 0:
                 self.assertEqual(scope['menu'].page, 'title')
                 save('18_integrated_title.png')

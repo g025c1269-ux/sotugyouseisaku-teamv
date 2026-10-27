@@ -1,5 +1,18 @@
 # ゲーム画面のスクリーンショット
 
+## Ollama AIナビのUI確認（通信モック）
+
+以下は `feature/ollama-navigator` の実際のmain.pyをSDL offscreenで動かし、Ollamaの代わりに固定文を返す通信モックで撮影した1040×640 PNGです。**本物のqwen3:4bが生成した文章ではありません。** マップ・個体・操作は通常のゲーム処理を使用しています。
+
+- [生成待ち中も操作・シミュレーションが続く画面](27_ai_game_pending_mock.png)
+- [草食全体のAI画面](28_ai_game_herbivore_mock.png)
+- [肉食全体のAI画面](29_ai_game_carnivore_mock.png)
+- [選択個体のAI画面](30_ai_game_individual_mock.png)
+
+[Windows実機でqwen3:4bを確認する手順](../docs/ollama_navigator.md)を使って、実際の生成時間と文章を確認してください。
+
+以下はこれまでの開発時点の記録です。
+
 Pygameの実際の描画内容を、画面接続のないクラウド環境でSDLの `offscreen` ドライバーを使って保存しました。ゲームのソースコードや計算処理は変更していません。
 
 ## 起動直後・操作パネル
