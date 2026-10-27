@@ -7,6 +7,7 @@ import math
 import numpy as np
 import config
 from organism import Organism, NeuralNetwork
+from season_effects import season_of
 
 
 # =============================================
@@ -312,7 +313,8 @@ class World:
 
         if (np.random.random() < config.FOOD_SPAWN_RATE
                 and self._food_count < config.MAX_FOOD):
-            for _ in range(self.effective_food_spawn):
+            season_mult = config.SEASON_FOOD_MULT[season_of(self.generation)]
+            for _ in range(int(round(self.effective_food_spawn * season_mult))):
                 x = np.random.randint(0, config.GRID_SIZE)
                 y = np.random.randint(0, config.GRID_SIZE)
                 zone_rate = self._zone_food_rate(self.get_zone(x, y))
@@ -385,9 +387,11 @@ class World:
     # --------------------------------------------------
     def update_temperature(self):
         """現在の世代から気温を計算してconfig.TEMPERATUREに反映する (TEMP_SUMMER==TEMP_WINTERなら固定気温)"""
+        # 季節の区切り(1世代目=春の始まり)に合わせ、夏の中央で最高、冬の中央で最低になる位相。
+        # 季節kの中央は 0.5 + (k + 0.5) * SEASON_CYCLE / 4 世代目 (SEASON_CYCLE=12なら夏=5・冬=11、20なら夏=8・冬=18)
+        phase = (self.generation - 0.5) / config.SEASON_CYCLE - 0.125
         config.TEMPERATURE = (config.TEMP_SUMMER + config.TEMP_WINTER) / 2 + \
-            (config.TEMP_SUMMER - config.TEMP_WINTER) / 2 * \
-            math.sin(2 * math.pi * self.generation / config.SEASON_CYCLE)
+            (config.TEMP_SUMMER - config.TEMP_WINTER) / 2 * math.sin(2 * math.pi * phase)
 
     def run_generation(self):
         self.generation += 1

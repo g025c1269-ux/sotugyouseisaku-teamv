@@ -7,7 +7,7 @@
 #   冬: 雪が降る                アイコン: 雪ダルマ
 #
 # 季節は「世代」から決まる。気温(world.update_temperature)と同じ
-# sin波の1周期 = config.SEASON_CYCLE 世代 を4等分しているので、
+# sin波の1周期 = config.SEASON_CYCLE 世代 を4等分している (1世代目が春の始まり)ので、
 # 気温の上がり始め=春 / 最高=夏 / 下がり始め=秋 / 最低=冬 に一致する。
 # 季節が影響するのは気温だけ(気温の計算は world.py のまま変更なし)。
 #
@@ -31,15 +31,24 @@ SEASON_COLORS = {
 
 
 def season_of(generation):
-    """世代番号から季節名を返す。
+    """世代番号から季節名を返す。1世代目が春の始まり。
 
-    気温 = 平均 + 振幅 * sin(2π * 世代 / SEASON_CYCLE) なので、
-    位相0(気温が平均を上向きに横切る点)を春の中心にして4等分する。
-    SEASON_CYCLE=20 なら 18〜2世代=春 / 3〜7=夏 / 8〜12=秋 / 13〜17=冬。
+    SEASON_CYCLE=12(1世代=1ヶ月)なら 1〜3世代=春 / 4〜6=夏 / 7〜9=秋 / 10〜12=冬 (13世代目から2年目の春)。
+    気温(world.update_temperature)は夏の中央(5世代目)で最高、冬の中央(11世代目)で最低になる。
     """
     cycle = max(1, config.SEASON_CYCLE)
-    phase = (generation / cycle) % 1.0
-    return SEASONS[int(((phase + 0.125) % 1.0) * 4) % 4]
+    phase = ((generation - 1) % cycle) / cycle
+    return SEASONS[int(phase * 4) % 4]
+
+
+def year_of(generation):
+    """世代番号から「何年目か」を返す (1世代目 = 1年目)。表示用。"""
+    return (generation - 1) // max(1, config.SEASON_CYCLE) + 1
+
+
+def season_label(generation):
+    """表示用の「N年目 春」の文字列"""
+    return f"{year_of(generation)}年目 {SEASON_NAMES_JA[season_of(generation)]}"
 
 
 # ---------------------------------------------
@@ -353,10 +362,10 @@ class SeasonEffects:
 
         screen.set_clip(old_clip)
 
-    def draw_badge(self, screen, season, temperature):
-        """右下に、いまの季節のアイコン・名前・気温を表示する。"""
+    def draw_badge(self, screen, season, temperature, year=None, generation=None):
+        """右下に、いまの季節のアイコン・名前・(何年目か)・気温を表示する。generationを渡すと年間ゲージも出す。"""
         pg, v = self.pg, self.view
-        w, h = 112, 58
+        w, h = (136 if year is not None else 112), 58
         rect = pg.Rect(v - w - 8, v - h - 8, w, h)
         shade = pg.Surface((w, h), pg.SRCALPHA)
         pg.draw.rect(shade, (0, 0, 0, 150), shade.get_rect(), border_radius=8)
@@ -367,5 +376,32 @@ class SeasonEffects:
             name = self.font.render(SEASON_NAMES_JA[season], True, SEASON_COLORS[season])
             name = pg.transform.scale(name, (name.get_width() * 2, name.get_height() * 2))
             screen.blit(name, (rect.x + 62, rect.y + 6))
+            if year is not None:
+                yt = self.font.render(f"{year}年目", True, (255, 255, 255))
+                screen.blit(yt, (rect.x + 62 + name.get_width() + 6, rect.y + 6 + name.get_height() - yt.get_height() - 4))
             temp = self.font.render(f"{temperature:.1f}°C", True, (255, 255, 255))
             screen.blit(temp, (rect.x + 62, rect.bottom - temp.get_height() - 6))
+        if generation is not None:
+            self.draw_year_gauge(screen, generation, rect)
+
+    def draw_year_gauge(self, screen, generation, badge_rect):
+        """バッジの上に、1年(SEASON_CYCLE世代)の進み具合を示すゲージを描く。
+        1世代=1マス。季節の色で塗り分け、いまの世代のマスだけ明るく白い枠で強調する。"""
+        pg = self.pg
+        n = max(1, config.SEASON_CYCLE)
+        cur = (generation - 1) % n + 1
+        gap, cell_h = 2, 9
+        cell_w = max(2, (badge_rect.width - gap * (n - 1)) // n)
+        total_w = cell_w * n + gap * (n - 1)
+        x0, y0 = badge_rect.x, badge_rect.y - cell_h - 8
+        back = pg.Surface((total_w + 8, cell_h + 8), pg.SRCALPHA)
+        pg.draw.rect(back, (0, 0, 0, 150), back.get_rect(), border_radius=5)
+        screen.blit(back, (x0 - 4, y0 - 4))
+        for i in range(1, n + 1):
+            color = SEASON_COLORS[season_of(i)]
+            cell = pg.Rect(x0 + (i - 1) * (cell_w + gap), y0, cell_w, cell_h)
+            if i == cur:
+                pg.draw.rect(screen, color, cell.inflate(2, 4))
+                pg.draw.rect(screen, (255, 255, 255), cell.inflate(2, 4), 2)
+            else:
+                pg.draw.rect(screen, tuple(int(c * 0.4) for c in color), cell)

@@ -21,7 +21,7 @@ import random
 
 import numpy as np
 import config
-from season_effects import SeasonEffects, season_of
+from season_effects import SeasonEffects, season_of, year_of
 
 CELL = 4                    # 地形タイルの基本ピクセル数 (俯瞰の1マス)。160マス x 4px = 640px
 ZOOM_LEVELS = (4, 16, 32)   # 1マスのピクセル数 (4=俯瞰, 16=標準, 32=接近)
@@ -566,7 +566,7 @@ class PixelRenderer:
         season = season_of(world.generation)
         if self.show_season_fx:
             self.season_fx.draw(screen, season)
-        self.season_fx.draw_badge(screen, season, config.TEMPERATURE)
+        self.season_fx.draw_badge(screen, season, config.TEMPERATURE, year_of(world.generation), world.generation)
 
     # =================================================
     # ミニマップ (ズーム中だけ表示)
@@ -607,8 +607,8 @@ class PixelRenderer:
         r0 = max(0, self.off_y // z)
         r1 = min(n - 1, (self.off_y + view - 1) // z)
 
-        # 食物 (画面内だけ)
-        if self.show_food:
+        # 食物 (画面内だけ)。最小ズーム(俯瞰)のときは描かない
+        if self.show_food and z != ZOOM_LEVELS[0]:
             berry = self._berry(z // CELL)
             for (fx, fy) in np.argwhere(world.food_grid[r0:r1 + 1, c0:c1 + 1]):
                 screen.blit(berry, ((c0 + int(fy)) * z - self.off_x, (r0 + int(fx)) * z - self.off_y))

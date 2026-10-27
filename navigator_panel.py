@@ -14,7 +14,7 @@ class NavigatorPanel:
         self.small = self.detail._font(13)
         self.heading = self.detail._font(20)
         self.selected = None
-        self.open = True
+        self.open = False          # 神様モード開始時は元の情報パネルを表示 (「解説」ボタン/Nキーで開く)
         self.view = 'overview'
         self.close_rect = pygame.Rect(self.rect.right - 65, 12, 53, 28)
         self.detail_rect = pygame.Rect(self.rect.right - 128, 12, 56, 28)

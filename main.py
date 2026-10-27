@@ -14,6 +14,7 @@ import japanize_matplotlib
 import config
 from world import World
 from pixel_art import PixelRenderer, CELL, ZOOM_LEVELS
+from season_effects import season_label
 import os
 
 
@@ -239,11 +240,12 @@ def _draw_legend(screen, pygame, small_font, x, y, renderer):
 # --------------------------------------------------
 # 左上: FPS・ズーム倍率・操作ヒント (重くなったときの切り分け用にFPSを常時表示)
 # --------------------------------------------------
-def _draw_view_hud(screen, pygame, small_font, renderer, clock, follow):
+def _draw_view_hud(screen, pygame, small_font, renderer, clock, follow, explain_open=False):
     text = (f"FPS {clock.get_fps():.0f} | x{renderer.zoom // CELL} | "
             f"ホイール:ズーム ドラッグ:移動 F:追跡{'中' if follow else ''} | "
             f"V:食料{'表示' if renderer.show_food else '非表示'} | "
-            f"E:エフェクト{'ON' if renderer.show_season_fx else 'OFF'}")
+            f"E:エフェクト{'ON' if renderer.show_season_fx else 'OFF'} | "
+            f"N:解説{'ON' if explain_open else 'OFF'}")
     surf = small_font.render(text, True, (255, 255, 255))
     shade = pygame.Surface((surf.get_width() + 8, surf.get_height() + 4), pygame.SRCALPHA)
     shade.fill((0, 0, 0, 150))
@@ -337,7 +339,8 @@ def _draw_selected_panel(screen, pygame, font, big_font, small_font, world, x, y
 # 右側: 世代・個体数・気温・モード・速度スライダー・凡例・形質パネル全体
 # 戻り値: 速度ボタンのクリック判定用Rectの辞書 (画面座標)
 # --------------------------------------------------
-def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, mode, speed_level, selected_org, renderer):
+def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, mode, speed_level, selected_org, renderer,
+                     explain_rect=None):
     x0 = GRID_PANEL_SIZE
     pygame.draw.rect(screen, PANEL_BG, (x0, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT))
 
@@ -359,13 +362,19 @@ def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, 
         controls_text = "Space:一時停止   M:モード切替   Esc:終了"
 
     header_lines = [
-        (f"世代 {world.generation}", big_font, (255, 255, 255)),
+        (season_label(world.generation), big_font, (255, 255, 255)),
         (f"草食動物: {len(herbs)} 匹", font, (100, 181, 246)),
         (f"肉食動物: {len(carns)} 匹", font, (239, 83, 80)),
         (f"気温: {config.TEMPERATURE:.1f}°C", font, (255, 213, 79)),
         (mode_text, small_font, (255, 235, 59) if paused else (180, 180, 180)),
         (controls_text, small_font, (140, 140, 140)),
     ]
+
+    if explain_rect is not None:      # 解説パネルを開くボタン (解説パネルの「閉じる」ボタンと同じ位置・大きさ)
+        pygame.draw.rect(screen, (50, 55, 62), explain_rect, border_radius=4)
+        pygame.draw.rect(screen, (90, 95, 100), explain_rect, 1, border_radius=4)
+        label = small_font.render("解説", True, (225, 225, 225))
+        screen.blit(label, label.get_rect(center=explain_rect.center))
 
     for text, f, color in header_lines:
         surf = f.render(text, True, color)
@@ -511,6 +520,8 @@ def run_with_visualization(world):
                         follow = False
                     else:                                    # 盤面: クリックなら選択 / 動かしたら移動
                         drag_start, drag_last, drag_moved = (mx, my), (mx, my), False
+                elif not status_panel.open and status_panel.close_rect.collidepoint(mx, my):
+                    status_panel.open = True                 # 右パネル右上の「解説」ボタン → 解説パネルを開く
                 else:                                        # 右パネル: 速度ボタン
                     for key, rect in speed_button_rects.items():
                         if rect.collidepoint(mx, my):
@@ -565,9 +576,10 @@ def run_with_visualization(world):
 
         screen.fill(BG_COLOR)
         renderer.draw(screen, world, selected_org)
-        _draw_view_hud(screen, pygame, small_font, renderer, clock, follow)
+        _draw_view_hud(screen, pygame, small_font, renderer, clock, follow, status_panel.open)
         speed_button_rects = _draw_info_panel(
-            screen, pygame, font, big_font, small_font, world, paused, mode, speed_level, selected_org, renderer
+            screen, pygame, font, big_font, small_font, world, paused, mode, speed_level, selected_org, renderer,
+            explain_rect=status_panel.close_rect
         )
 
         if extinct:
