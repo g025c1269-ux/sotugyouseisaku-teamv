@@ -50,7 +50,7 @@ HERB_LIGHT, HERB_DARK = (144, 202, 249), (13, 71, 161)
 CARN_LIGHT, CARN_DARK = (239, 154, 154), (183, 28, 28)
 
 TRAIT_FIELDS = [
-    ("耐寒性", "cold_resistance"),
+    ("温度適性", "cold_resistance"),
     ("速度",   "speed"),
     ("代謝",   "metabolism"),
     ("山耐性", "mountain_tolerance"),
@@ -230,7 +230,7 @@ def _draw_legend(screen, pygame, small_font, x, y, renderer):
     for text in ("見た目 → 遺伝子 (ズームすると見える)",
                  "角・太い足=山耐性   水色の足・ひれ=川耐性",
                  "足の長さ=速度   体の大きさ=代謝",
-                 "白くてもこもこ=耐寒性"):
+                 "白くてもこもこ=寒い気候向き"):
         label = small_font.render(text, True, (150, 155, 160))
         screen.blit(label, (x, y))
         y += label.get_height() + 1
@@ -244,8 +244,8 @@ def _draw_view_hud(screen, pygame, small_font, renderer, clock, follow, explain_
     text = (f"FPS {clock.get_fps():.0f} | x{renderer.zoom // CELL} | "
             f"ホイール:ズーム ドラッグ:移動 F:追跡{'中' if follow else ''} | "
             f"V:食料{'表示' if renderer.show_food else '非表示'} | "
-            f"E:エフェクト{'ON' if renderer.show_season_fx else 'OFF'} | "
-            f"N:解説{'ON' if explain_open else 'OFF'}")
+            + (f"E:エフェクト{'ON' if renderer.show_season_fx else 'OFF'} | " if config.SEASONS_ENABLED else "")
+            + f"N:解説{'ON' if explain_open else 'OFF'} | F5:セーブ")
     surf = small_font.render(text, True, (255, 255, 255))
     shade = pygame.Surface((surf.get_width() + 8, surf.get_height() + 4), pygame.SRCALPHA)
     shade.fill((0, 0, 0, 150))
@@ -316,7 +316,7 @@ def _draw_selected_panel(screen, pygame, font, big_font, small_font, world, x, y
     zone = world.get_zone(org.x, org.y)
     info_lines = [
         f"エネルギー: {org.energy:.1f} / {org.max_energy:.1f}",
-        f"年齢: {org.age}",
+        f"行動数: {org.age} / {config.MAX_AGE}",
         f"現在のゾーン: {ZONE_NAMES_JA[zone]}",
         f"座標: ({org.x}, {org.y})",
     ]
@@ -340,7 +340,7 @@ def _draw_selected_panel(screen, pygame, font, big_font, small_font, world, x, y
 # 戻り値: 速度ボタンのクリック判定用Rectの辞書 (画面座標)
 # --------------------------------------------------
 def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, mode, speed_level, selected_org, renderer,
-                     explain_rect=None):
+                     explain_rect=None, menu_rect=None):
     x0 = GRID_PANEL_SIZE
     pygame.draw.rect(screen, PANEL_BG, (x0, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT))
 
@@ -362,7 +362,8 @@ def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, 
         controls_text = "Space:一時停止   M:モード切替   Esc:終了"
 
     header_lines = [
-        (season_label(world.generation), big_font, (255, 255, 255)),
+        (season_label(world.generation) if config.SEASONS_ENABLED else f"{world.generation}ヶ月目",
+         big_font, (255, 255, 255)),
         (f"草食動物: {len(herbs)} 匹", font, (100, 181, 246)),
         (f"肉食動物: {len(carns)} 匹", font, (239, 83, 80)),
         (f"気温: {config.TEMPERATURE:.1f}°C", font, (255, 213, 79)),
@@ -370,11 +371,13 @@ def _draw_info_panel(screen, pygame, font, big_font, small_font, world, paused, 
         (controls_text, small_font, (140, 140, 140)),
     ]
 
-    if explain_rect is not None:      # 解説パネルを開くボタン (解説パネルの「閉じる」ボタンと同じ位置・大きさ)
-        pygame.draw.rect(screen, (50, 55, 62), explain_rect, border_radius=4)
-        pygame.draw.rect(screen, (90, 95, 100), explain_rect, 1, border_radius=4)
-        label = small_font.render("解説", True, (225, 225, 225))
-        screen.blit(label, label.get_rect(center=explain_rect.center))
+    for rect_, text_ in ((explain_rect, "解説"), (menu_rect, "メニュー")):
+        if rect_ is None:      # 解説パネルを開くボタン(解説パネルの「閉じる」と同じ位置・大きさ) / タイトルへ戻るメニューボタン
+            continue
+        pygame.draw.rect(screen, (50, 55, 62), rect_, border_radius=4)
+        pygame.draw.rect(screen, (90, 95, 100), rect_, 1, border_radius=4)
+        label = small_font.render(text_, True, (225, 225, 225))
+        screen.blit(label, label.get_rect(center=rect_.center))
 
     for text, f, color in header_lines:
         surf = f.render(text, True, color)
@@ -409,6 +412,35 @@ def _load_fonts(pygame):
 
 
 # --------------------------------------------------
+# 「メニューに戻りますか？」の確認ダイアログ (位置は画面中央固定)
+# --------------------------------------------------
+def _confirm_rects():
+    import pygame
+    dlg = pygame.Rect(0, 0, 480, 150)
+    dlg.center = (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
+    yes = pygame.Rect(dlg.centerx - 130, dlg.bottom - 54, 120, 36)
+    no = pygame.Rect(dlg.centerx + 10, dlg.bottom - 54, 120, 36)
+    return dlg, yes, no
+
+
+def _draw_confirm_dialog(screen, pygame, font, big_font):
+    shade = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+    shade.fill((0, 0, 0, 150))
+    screen.blit(shade, (0, 0))
+    dlg, yes, no = _confirm_rects()
+    pygame.draw.rect(screen, (22, 27, 34), dlg, border_radius=10)
+    pygame.draw.rect(screen, (100, 181, 246), dlg, 2, border_radius=10)
+    for text, f, color, y in (("メニューに戻りますか？", big_font, (255, 255, 255), dlg.y + 24),
+                              ("セーブしていない進行は失われます", font, (255, 213, 79), dlg.y + 62)):
+        surf = f.render(text, True, color)
+        screen.blit(surf, surf.get_rect(midtop=(dlg.centerx, y)))
+    for rect, label, fill in ((yes, "はい", (183, 28, 28)), (no, "いいえ", (33, 150, 243))):
+        pygame.draw.rect(screen, fill, rect, border_radius=6)
+        surf = font.render(label, True, (255, 255, 255))
+        screen.blit(surf, surf.get_rect(center=rect.center))
+
+
+# --------------------------------------------------
 # 1ステップ進め、世代境界なら記録して世代を進める
 # 戻り値: (step_in_gen, extinct, done)
 # --------------------------------------------------
@@ -432,8 +464,11 @@ def _step_simulation(world, step_in_gen, extinct, done):
 # =============================================
 # リアルタイム可視化モード (pygame)
 # =============================================
-def run_with_visualization(world):
+def run_with_visualization(world, resume=None):
+    """resume: セーブからの再開用の辞書 (step_in_gen / extinct / done)。Noneなら新規に1世代目から始める。
+    戻り値: メニューボタンで戻ったときは "menu"、それ以外はNone。"""
     import pygame
+    import save_load
     from navigator_panel import NavigatorPanel
 
     pygame.init()
@@ -444,12 +479,17 @@ def run_with_visualization(world):
     renderer = PixelRenderer(pygame, world, small_font)
     status_panel = NavigatorPanel((GRID_PANEL_SIZE, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT))
 
-    world.generation += 1  # 1世代目を開始
-    step_in_gen = 0
+    if resume is None:
+        world.generation += 1  # 1世代目を開始
+        step_in_gen, extinct, done = 0, False, False
+    else:                      # セーブした時点(世代・世代内ステップ)からそのまま再開する
+        step_in_gen, extinct, done = resume["step_in_gen"], resume["extinct"], resume["done"]
     paused = False
     running = True
-    extinct = False        # 全種絶滅したか
-    done = False            # ループを止めるべきか (絶滅 または 最大世代到達)
+    toast = None            # (メッセージ, 表示を終える時刻ms) セーブ結果などの短い表示
+    confirm_menu = False    # 「メニューに戻りますか？」の確認ダイアログを出しているか
+    back_to_menu = False
+    menu_rect = pygame.Rect(status_panel.close_rect.x - 72, status_panel.close_rect.y, 64, status_panel.close_rect.height)
     mode = "normal"         # "normal" または "per_gen" (1世代ごとモード)
     speed_level = DEFAULT_SPEED_LEVEL   # "low" / "medium" / "high"
     drag_start = None       # 盤面ドラッグ(移動)の開始位置
@@ -466,6 +506,18 @@ def run_with_visualization(world):
 
     while running:
         for event in pygame.event.get():
+            if confirm_menu:                         # 確認ダイアログ中は、はい/いいえ/Esc/閉じるだけ受け付ける
+                _, yes_rect, no_rect = _confirm_rects()
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    confirm_menu = False
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if yes_rect.collidepoint(event.pos):
+                        back_to_menu, running = True, False
+                    elif no_rect.collidepoint(event.pos):
+                        confirm_menu = False
+                continue
             if status_panel.handle_event(event, selected_org):
                 continue
             if event.type == pygame.QUIT:
@@ -475,6 +527,12 @@ def run_with_visualization(world):
                     paused = not paused
                 elif event.key == pygame.K_ESCAPE:
                     running = False
+                elif event.key == pygame.K_F5:
+                    try:
+                        save_load.save_game(world, step_in_gen, extinct, done)
+                        toast = (f"セーブしました ({world.generation}世代目)", pygame.time.get_ticks() + 2000)
+                    except Exception as e:
+                        toast = (f"セーブに失敗しました: {e}", pygame.time.get_ticks() + 3500)
                 elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3):
                     renderer.set_zoom(ZOOM_LEVELS[event.key - pygame.K_1])
                 elif event.key == pygame.K_v:
@@ -522,6 +580,8 @@ def run_with_visualization(world):
                         drag_start, drag_last, drag_moved = (mx, my), (mx, my), False
                 elif not status_panel.open and status_panel.close_rect.collidepoint(mx, my):
                     status_panel.open = True                 # 右パネル右上の「解説」ボタン → 解説パネルを開く
+                elif not status_panel.open and menu_rect.collidepoint(mx, my):
+                    confirm_menu = True                      # 「メニュー」ボタン → 確認ダイアログ
                 else:                                        # 右パネル: 速度ボタン
                     for key, rect in speed_button_rects.items():
                         if rect.collidepoint(mx, my):
@@ -558,7 +618,7 @@ def run_with_visualization(world):
         if follow and selected_org is not None and selected_org.alive and selected_org in world.organisms:
             renderer.center_on_org(selected_org)
 
-        if running and not paused and not done:
+        if running and not paused and not done and not confirm_menu:
             accumulator += clock.get_time() / 1000.0
             sps = SPEED_SPS[speed_level]
             steps_to_run = min(int(accumulator * sps), MAX_STEPS_PER_FRAME)
@@ -579,7 +639,7 @@ def run_with_visualization(world):
         _draw_view_hud(screen, pygame, small_font, renderer, clock, follow, status_panel.open)
         speed_button_rects = _draw_info_panel(
             screen, pygame, font, big_font, small_font, world, paused, mode, speed_level, selected_org, renderer,
-            explain_rect=status_panel.close_rect
+            explain_rect=status_panel.close_rect, menu_rect=menu_rect
         )
 
         if extinct:
@@ -594,6 +654,16 @@ def run_with_visualization(world):
             screen.blit(msg, rect)
 
         status_panel.draw(screen, selected_org, world)
+        if confirm_menu:
+            _draw_confirm_dialog(screen, pygame, font, big_font)
+        if toast is not None:
+            if pygame.time.get_ticks() < toast[1]:
+                msg = font.render(toast[0], True, (255, 255, 255))
+                rect = msg.get_rect(midtop=(GRID_PANEL_SIZE // 2, 40))
+                pygame.draw.rect(screen, (0, 0, 0), rect.inflate(24, 12), border_radius=6)
+                screen.blit(msg, rect)
+            else:
+                toast = None
         pygame.display.flip()
         clock.tick(60)
 
@@ -602,7 +672,10 @@ def run_with_visualization(world):
             running = False
 
     pygame.quit()
+    if back_to_menu:
+        return "menu"      # 進行は破棄してタイトル画面へ (結果グラフも保存しない)
     save_result_graph(world)
+    return None
 
 
 # =============================================
@@ -653,7 +726,7 @@ def save_result_graph(world):
 
     # 草食動物の形質変化
     axes[1].plot(h["generation"], h["herb_cold_resistance"],
-                 color="#0288d1", linewidth=2, label="耐寒性")
+                 color="#0288d1", linewidth=2, label="温度適性")
     axes[1].plot(h["generation"], h["herb_speed"],
                  color="#388e3c", linewidth=2, label="速度")
     axes[1].plot(h["generation"], h["herb_metabolism"],
@@ -671,7 +744,7 @@ def save_result_graph(world):
 
     # 肉食動物の形質変化
     axes[2].plot(h["generation"], h["carn_cold_resistance"],
-                 color="#e53935", linewidth=2, label="耐寒性")
+                 color="#e53935", linewidth=2, label="温度適性")
     axes[2].plot(h["generation"], h["carn_speed"],
                  color="#f57c00", linewidth=2, label="速度")
     axes[2].plot(h["generation"], h["carn_metabolism"],
@@ -699,7 +772,30 @@ def save_result_graph(world):
 if __name__ == "__main__":
     if config.VISUALIZE:
         from title_screen import show_title_screen
-        if show_title_screen() == "god":
-            run_with_visualization(World())
+        from settings_screen import show_settings_screen, apply_settings
+        import save_load
+        while True:
+            if show_title_screen() != "god":
+                break
+            message = None
+            launched = False
+            while True:                                   # 設定画面 (戻る → タイトル画面へ)
+                action, payload = show_settings_screen(message)
+                message = None
+                if action == "start":
+                    apply_settings(payload)               # World() を作る前にconfigへ反映する
+                    launched = run_with_visualization(World()) != "menu"   # "menu"ならタイトル画面からやり直す
+                elif action == "load":
+                    try:
+                        state = save_load.load_game()
+                    except save_load.LoadError as e:
+                        message = str(e)                  # 落とさず、設定画面にメッセージを出して戻る
+                        continue
+                    launched = run_with_visualization(state["world"], resume=state) != "menu"
+                elif action == "quit":
+                    launched = True
+                break
+            if launched:
+                break
     else:
         run_headless(World())

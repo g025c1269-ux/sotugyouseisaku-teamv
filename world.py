@@ -152,6 +152,7 @@ def generate_zone_map(n):
                           and (c[0] + dx, c[1] + dy) not in mountain for dx, dy in _N4)) or sorted(mountain)
     n_river = int(np.random.randint(1, 4))
     river = set()
+    river_legacy = set()    # 砂漠の位置を決めるための川の距離計算は、これまでと同じ川(山の中の右隣も含む)で行う
     for _ in range(n_river):
         cx, cy = mlist[np.random.randint(len(mlist))]
         visited = {(cx, cy)}
@@ -179,11 +180,15 @@ def generate_zone_map(n):
             path.append((cx, cy))
         for x, y in path:
             river.add((x, y))
+            river_legacy.add((x, y))
             if y + 1 < n and land[x, y + 1]:
-                river.add((x, y + 1))                  # 川幅は2マス
+                river_legacy.add((x, y + 1))
+                if (x, y) not in mountain:             # 道筋が山のマスのときは右隣を川にしない (1マスだけ孤立するため)
+                    river.add((x, y + 1))              # 川幅は2マス
     river_mask = np.zeros((n, n), dtype=bool)
-    for x, y in river:
+    for x, y in river_legacy:
         river_mask[x, y] = True
+    for x, y in river:
         if kind[x, y] != "mountain":
             kind[x, y] = "river"
 
@@ -199,6 +204,18 @@ def generate_zone_map(n):
                 for x, y in _grow_region(ok, size):
                     kind[x, y] = "desert"
     # --- 5. 草原: 残りの陸地はそのままgrassland ---
+
+    # --- 後処理: 海に届いておらず5マス以下の孤立した川の成分は、元の地形(草原)に戻す (6マス以上は残す) ---
+    sizes_r, label_r = _components(kind == "river")
+    for k, size in enumerate(sizes_r):
+        if size > 5:
+            continue
+        cells = np.argwhere(label_r == k)
+        reaches_sea = any(0 <= x + dx < n and 0 <= y + dy < n and kind[x + dx, y + dy] == "sea"
+                          for x, y in cells for dx, dy in _N4)
+        if not reaches_sea:
+            for x, y in cells:
+                kind[x, y] = "grassland"
 
     counts = {z: int((kind == z).sum()) for z in ("sea", "mountain", "river", "desert", "grassland")}
     info = {

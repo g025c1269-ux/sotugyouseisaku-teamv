@@ -19,6 +19,9 @@ TEMPERATURE      = 15.0     # 気温 (°C)  ← ここを変えて実験する
 # ニューロエボリューション (Trueで行動選択をルールベースからNNに切り替える)
 USE_NEUROEVOLUTION = True
 
+# 季節の演出・表示を使うか (観察モードの設定画面で切り替える。OFFのときはTEMP_SUMMER=TEMP_WINTERで固定気温にする)
+SEASONS_ENABLED = True
+
 # 季節変化 (常時有効: 世代ごとに気温をsin波で更新する)
 SEASON_CYCLE = 12           # 何世代で1サイクル(春夏秋冬)。1世代=1ヶ月、12世代=1年
 TEMP_SUMMER  = 35.0         # 夏の最高気温
