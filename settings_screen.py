@@ -1,6 +1,6 @@
 """観察モードの開始前設定画面 (タイトル画面のスタイルに合わせたpygame画面)。
 
-show_settings_screen() は ("start", 設定dict) / ("load", None) / ("back", None) / ("quit", None) を返す。
+show_settings_screen() は ("start", 設定dict) / ("load", {"explanation_mode": ...}) / ("back", None) / ("quit", None) を返す。
 確定した設定は apply_settings() で、World() を作る前に config へ反映する。
 """
 import copy
@@ -9,6 +9,7 @@ import pygame
 
 import config
 import save_load
+from explanation_settings import ExplanationSettings
 from title_screen import SIZE, BACKGROUND, TEXT, MUTED, _font
 
 # 季節ONのときの基準値 (設定画面を開く前のconfigの値を控えておく)
@@ -36,6 +37,7 @@ def default_settings():
         "fixed_temp": 20,
         "herb": int(config.INITIAL_HERBIVORES),
         "carn": int(config.INITIAL_CARNIVORES),
+        "explanation_mode": "rule",
     }
 
 
@@ -78,6 +80,7 @@ class SettingsScreen:
         pygame.display.set_caption("ECOSYSTEM — 観察モードの設定")
         self.fonts = {size: _font(size) for size in (14, 18, 22, 28)}
         self.s = default_settings()
+        self.explanation = ExplanationSettings(_font)
         self.message = message
         self.focus_id = ("row", "neuro")   # 今フォーカスしている項目 ("row"/"button", キー)
         self.editing = None             # 数値入力中の文字列 (入力中でなければNone)
@@ -118,6 +121,7 @@ class SettingsScreen:
 
     def _focus_items(self):
         items = [("row", k) for k, _, _ in self.ROWS if self._enabled(k)]
+        items += [("explanation", k) for k in ("rule", "ai")]
         items += [("button", k) for k, _ in self.BUTTONS if self._button_enabled(k)]
         return items
 
@@ -160,14 +164,23 @@ class SettingsScreen:
 
     def _activate_button(self, key):
         self._commit()
+        if key in ("start", "load") and not self.explanation.can_start():
+            return None
         if key == "start":
-            return ("start", dict(self.s))
+            return ("start", dict(self.s, explanation_mode=self.explanation.mode))
         if key == "load":
-            return ("load", None)
+            return ("load", {"explanation_mode": self.explanation.mode})
         return ("back", None)
 
     # ---------- 入力 ----------
     def handle_event(self, event):
+        self.explanation.poll()
+        if self.explanation.handle_event(event):
+            self.keyboard = False
+            self._commit()
+            self.focus_id = ("explanation", self.explanation.mode)
+            self.s["explanation_mode"] = self.explanation.mode
+            return None
         if event.type == pygame.QUIT:
             return ("quit", None)
         if event.type == pygame.MOUSEMOTION:
@@ -253,6 +266,14 @@ class SettingsScreen:
             if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE, pygame.K_LEFT, pygame.K_RIGHT):
                 self._toggle(key)
                 return None
+        elif kind == "explanation":
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE, pygame.K_LEFT, pygame.K_RIGHT):
+                if event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+                    key = "ai" if key == "rule" else "rule"
+                    self.focus_id = ("explanation", key)
+                self.explanation.select(key)
+                self.s["explanation_mode"] = self.explanation.mode
+            return None
         elif kind == "button":
             if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                 return self._activate_button(key)
@@ -296,6 +317,7 @@ class SettingsScreen:
 
     def draw(self):
         self._background()
+        self.explanation.draw(self.screen, self._focused() if self.keyboard else None)
         self._text("観察モードの設定", 28, center=(500, 56))
         self._text("開始する前に条件を選べます", 14, center=(500, 86), color=MUTED)
         focus_kind, focus_key = self._focused()
@@ -344,7 +366,7 @@ class SettingsScreen:
 
 
 def show_settings_screen(message=None):
-    """設定画面を出し、("start", 設定) / ("load", None) / ("back", None) / ("quit", None) を返す。"""
+    """設定画面を出し、("start", 設定) / ("load", {"explanation_mode": ...}) / ("back", None) / ("quit", None) を返す。"""
     pygame.init()
     try:
         screen = SettingsScreen(message)
