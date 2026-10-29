@@ -38,7 +38,7 @@ class TitleScreen:
 
     def _set_buttons(self):
         if self.page == "title":
-            labels = [("mission", "ミッションモード"),
+            labels = [("mission", "ゲームモード"),
                       ("god", "観察モード"), ("quit", "ゲーム終了")]
             self.buttons = [(key, label, pygame.Rect(320, 290 + i * 76, 360, 58))
                             for i, (key, label) in enumerate(labels)]
@@ -47,10 +47,7 @@ class TitleScreen:
         self.focus = 0
 
     def _activate(self, key):
-        if key == "mission":
-            self.page = "mission"
-            self._set_buttons()
-        elif key == "back":
+        if key == "back":
             self.page = "title"
             self._set_buttons()
         else:
@@ -140,6 +137,12 @@ def show_title_screen():
         while True:
             for event in pygame.event.get():
                 action = menu.handle_event(event)
+                if action == "mission":                   # ゲームモード → ステージ選択画面 → 戻ったらタイトル画面のまま
+                    from stage_select import show_stage_select
+                    if show_stage_select() == "quit":
+                        return "quit"
+                    menu.mouse = pygame.mouse.get_pos()
+                    break
                 if action == "help":                      # 「？」→ 解説画面 → 戻ったらタイトル画面のまま
                     from help_screen import show_help_screen
                     if show_help_screen() == "quit":
