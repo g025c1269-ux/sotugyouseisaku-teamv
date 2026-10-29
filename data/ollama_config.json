@@ -1,0 +1,9 @@
+{
+  "base_url": "http://localhost:11434",
+  "model": "qwen3:4b",
+  "timeout_seconds": 60,
+  "num_predict": 256,
+  "num_ctx": 4096,
+  "num_thread": 4,
+  "keep_alive": "2m"
+}

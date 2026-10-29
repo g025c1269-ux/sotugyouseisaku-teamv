@@ -464,8 +464,9 @@ def _step_simulation(world, step_in_gen, extinct, done):
 # =============================================
 # リアルタイム可視化モード (pygame)
 # =============================================
-def run_with_visualization(world, resume=None):
+def run_with_visualization(world, resume=None, explanation_mode="rule"):
     """resume: セーブからの再開用の辞書 (step_in_gen / extinct / done)。Noneなら新規に1世代目から始める。
+    explanation_mode: "rule"(通常) または "ai"。生態系の設定には影響しない。
     戻り値: メニューボタンで戻ったときは "menu"、それ以外はNone。"""
     import pygame
     import save_load
@@ -477,7 +478,8 @@ def run_with_visualization(world, resume=None):
     clock = pygame.time.Clock()
     font, big_font, small_font = _load_fonts(pygame)
     renderer = PixelRenderer(pygame, world, small_font)
-    status_panel = NavigatorPanel((GRID_PANEL_SIZE, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT))
+    status_panel = NavigatorPanel((GRID_PANEL_SIZE, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT),
+                                  ai_enabled=explanation_mode == "ai")
 
     if resume is None:
         world.generation += 1  # 1世代目を開始
@@ -518,7 +520,7 @@ def run_with_visualization(world, resume=None):
                     elif no_rect.collidepoint(event.pos):
                         confirm_menu = False
                 continue
-            if status_panel.handle_event(event, selected_org):
+            if status_panel.handle_event(event, selected_org, world):
                 continue
             if event.type == pygame.QUIT:
                 running = False
@@ -554,7 +556,7 @@ def run_with_visualization(world, resume=None):
                             extinct, done = ex2, dn2
                         else:
                             while True:
-                                step_in_gen, extinct, done = _step_simulation(world, step_in_gen, extinct, done)
+                                step_in_gen, extinct, done = status_panel.advance(world, _step_simulation, step_in_gen, extinct, done)
                                 if step_in_gen == 0:
                                     break
                             if world.generation not in gen_snapshots:
@@ -625,7 +627,7 @@ def run_with_visualization(world, resume=None):
             if steps_to_run > 0:
                 accumulator -= steps_to_run / sps
                 for _ in range(steps_to_run):
-                    step_in_gen, extinct, done = _step_simulation(world, step_in_gen, extinct, done)
+                    step_in_gen, extinct, done = status_panel.advance(world, _step_simulation, step_in_gen, extinct, done)
                     if step_in_gen == 0:
                         if world.generation not in gen_snapshots:
                             gen_snapshots[world.generation] = (copy.deepcopy(world), extinct, done)
@@ -671,6 +673,7 @@ def run_with_visualization(world, resume=None):
             pygame.time.delay(1500)
             running = False
 
+    status_panel.close()
     pygame.quit()
     if back_to_menu:
         return "menu"      # 進行は破棄してタイトル画面へ (結果グラフも保存しない)
@@ -784,14 +787,15 @@ if __name__ == "__main__":
                 message = None
                 if action == "start":
                     apply_settings(payload)               # World() を作る前にconfigへ反映する
-                    launched = run_with_visualization(World()) != "menu"   # "menu"ならタイトル画面からやり直す
+                    launched = run_with_visualization(World(), explanation_mode=payload.get("explanation_mode", "rule")) != "menu"   # "menu"ならタイトル画面からやり直す
                 elif action == "load":
                     try:
                         state = save_load.load_game()
                     except save_load.LoadError as e:
                         message = str(e)                  # 落とさず、設定画面にメッセージを出して戻る
                         continue
-                    launched = run_with_visualization(state["world"], resume=state) != "menu"
+                    launched = run_with_visualization(state["world"], resume=state,
+                                                      explanation_mode=payload.get("explanation_mode", "rule")) != "menu"
                 elif action == "quit":
                     launched = True
                 break
