@@ -1,0 +1,8 @@
+{
+  "stages": [
+    {"id": "famine", "name": "飢饉", "description": "食べ物がとても少ない世界。"},
+    {"id": "eternal_winter", "name": "永遠の冬", "description": "春が来ない、いつまでも寒い世界。"},
+    {"id": "meteor", "name": "隕石", "description": "空から隕石が降り、生き物と食べ物を消していく世界。"},
+    {"id": "desert", "name": "砂漠", "description": "ほとんどが砂漠の、乾いた世界。"}
+  ]
+}
