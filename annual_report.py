@@ -33,6 +33,50 @@ def annual_fallback(context):
     return ''.join(parts)
 
 
+def annual_population_reports(context):
+    """Freeze both overview cards from one completed year's observations."""
+    reports = {}
+    for species, label in (('herbivore', '草食たち'), ('carnivore', '肉食組')):
+        row = context['changes'][species]
+        delta = row['count_delta']
+        start_label = '観察開始時' if context['partial'] else '年初'
+        if row['end_count'] == 0:
+            change = '年末には姿が見えなくなったね' if row['start_count'] else start_label + 'も年末も姿が見えなかったね'
+        else:
+            change = '仲間が増えたね' if delta > 0 else '仲間が減ったね' if delta < 0 else '数を保ったね'
+        parts = [label + 'は' + change + '。']
+        candidates = [(key, trait) for key, trait in row['traits'].items()
+                      if trait['active'] and trait['delta'] is not None and abs(trait['delta']) >= .05]
+        if candidates:
+            _, trait = max(candidates, key=lambda item: (abs(item[1]['delta']), item[0]))
+            direction = '上がった' if trait['delta'] > 0 else '下がった'
+            parts.append(f"平均{trait['label']}が{direction}のも注目だよ。")
+        elif any(t['active'] and t['delta'] is not None for t in row['traits'].values()):
+            parts.append('平均の能力には、大きな変化が目立たなかったよ。')
+        else:
+            parts.append('平均の能力を比べる記録はそろっていないよ。')
+        if species == 'herbivore':
+            env = context['environment']
+            if abs(env['temperature_delta']) >= .1:
+                parts.append('気温は' + start_label + 'より' + ('高め' if env['temperature_delta'] > 0 else '低め') + 'で年末を迎えたよ。')
+            elif env['observed_temperature_max'] - env['observed_temperature_min'] >= .1:
+                parts.append('年内には気温の変化も見られたね。')
+            elif env['food_count_delta']:
+                parts.append('食べ物の数も' + start_label + 'より' + ('増えた' if env['food_count_delta'] > 0 else '減った') + 'ね。')
+        else:
+            parts.append('次の1年も、両方の群れを見守ろう！')
+        snapshot = context['end']['species'][species]
+        reports[species] = dict(copy.deepcopy(snapshot), text=''.join(parts),
+                               annual_caption=f"{row['start_count']}→{row['end_count']}匹 ({delta:+d})")
+    return reports
+
+
+def waiting_population_reports():
+    return {species: {'count': None, 'annual_caption': '年末に更新',
+                      'text': '最初の1年間を観察中！年末に、' + label + 'の数と平均の能力の変化を振り返るよ。'}
+            for species, label in (('herbivore', '草食たち'), ('carnivore', '肉食組'))}
+
+
 class AnnualRecorder:
     def __init__(self):
         self.navigator = NavigatorExplainer()
@@ -82,7 +126,8 @@ class AnnualRecorder:
         year = year_of(generation)
         if year in self.records:
             return None
-        boundary = generation_finished and generation % self.cycle == 0
+        boundary = (generation_finished and generation % self.cycle == 0
+                    and (not extinct or world.step_count % config.MAX_STEPS_PER_GEN == 0))
         if not boundary and not done:
             return None
         start = self.starts[year]
@@ -113,7 +158,7 @@ class AnnualRecorder:
         temperatures = [s['temperature_c'] for s in observations] + [end['temperature_c']]
         context = {
             'target': 'annual', 'year': year, 'generations_per_year': self.cycle,
-            'partial': partial, 'reason': 'extinction' if extinct else 'year_end' if boundary else 'simulation_end',
+            'partial': partial, 'year_completed': bool(boundary), 'reason': 'extinction' if extinct else 'year_end' if boundary else 'simulation_end',
             'action_mode': mode, 'start': start, 'end': end, 'snapshot': {'generation': generation, 'step': end['step']},
             'changes': changes, 'notable_trait_changes': notable,
             'environment': {'temperature_start': start['temperature_c'], 'temperature_end': end['temperature_c'],
@@ -129,7 +174,8 @@ class AnnualRecorder:
 
 
 class AnnualHistory:
-    def __init__(self, log_path=None):
+    def __init__(self, log_path=None, ai_enabled=True):
+        self.ai_enabled = ai_enabled
         self.recorder = AnnualRecorder()
         self.entries = {}
         self.selected_year = None  # None follows the latest completed response.
@@ -141,10 +187,24 @@ class AnnualHistory:
         year = context['year']
         if year in self.entries:
             return False
-        self.entries[year] = {'context': copy.deepcopy(context), 'fallback': annual_fallback(context),
-                              'status': 'queued', 'text': '', 'error': '', 'raw_response': None, 'request': None}
+        completed = context['year_completed']
+        self.entries[year] = {'context': copy.deepcopy(context), 'fallback': annual_fallback(context) if completed else '',
+                              'status': ('queued' if self.ai_enabled else 'fallback') if completed else 'incomplete',
+                              'population_reports': annual_population_reports(context) if completed else None,
+                              'text': '', 'error': '', 'raw_response': None, 'request': None}
         self.save()
         return True
+
+    def advance(self, world, step_function, step_in_gen, extinct, done):
+        """Observe every real step; publish only at a completed calendar boundary."""
+        if done:
+            return step_in_gen, extinct, done
+        self.recorder.before_step(world)
+        result = step_function(world, step_in_gen, extinct, done)
+        context = self.recorder.after_step(world, result[0] == 0, result[2], result[1])
+        if context is not None:
+            self.add(context)
+        return result
 
     def save(self):
         try:

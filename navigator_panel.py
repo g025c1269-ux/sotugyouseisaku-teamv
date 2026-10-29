@@ -2,6 +2,7 @@
 import pygame
 
 from navigator_explainer import NavigatorExplainer, PROFILE_NAMES
+from annual_report import AnnualHistory, waiting_population_reports
 from status_panel import StatusPanel as DetailedPanel
 
 
@@ -18,16 +19,16 @@ class NavigatorPanel:
         self.view = 'overview'
         self.close_rect = pygame.Rect(self.rect.right - 65, 12, 53, 28)
         self.detail_rect = pygame.Rect(self.rect.right - 128, 12, 56, 28)
-        self.cards = {}
+        self.cards = waiting_population_reports()
         self.individual = {}
         self.layouts = []
-        self._world = None
-        self._token = None
+        self._annual_entry = None
         self.ai = None
         if ai_enabled:
             from ai_navigator import AINavigatorView
             self.ai = AINavigatorView(self.rect)
             self.view = 'ai'
+        self.annual = self.ai.controller.annual if self.ai is not None else AnnualHistory(ai_enabled=False)
         self.ai_rect = pygame.Rect(self.rect.right - 68, 46, 56, 25)
 
     def _sync_selection(self, org):
@@ -80,11 +81,10 @@ class NavigatorPanel:
 
     def _refresh(self, world, org):
         import config
-        token = (world.step_count, config.TEMPERATURE, config.USE_NEUROEVOLUTION)
-        if self._world is not world or token != self._token:
-            self.cards = {species:self.explainer.population(world.organisms, species, config.TEMPERATURE)
-                          for species in ('herbivore', 'carnivore')}
-            self._world, self._token = world, token
+        entry = self.annual.displayed()
+        if entry is not self._annual_entry:
+            self.cards = entry['population_reports'] if entry is not None else waiting_population_reports()
+            self._annual_entry = entry
         self.individual = self.explainer.individual(org, config.TEMPERATURE)
 
     def _wrap(self, text, font, width):
@@ -110,6 +110,8 @@ class NavigatorPanel:
         pygame.draw.arc(screen, (20, 48, 37), (x - 5, y + 1, 10, 7), 3.3, 6.1, 2)
 
     def _caption(self, report):
+        if 'annual_caption' in report:
+            return report['annual_caption']
         if not report['count']:
             return '観察対象なし'
         if report['profile'] == 'terrain':
@@ -146,7 +148,7 @@ class NavigatorPanel:
 
     def advance(self, world, step_function, *args):
         if self.ai is None:
-            return step_function(world, *args)
+            return self.annual.advance(world, step_function, *args)
         return self.ai.controller.advance(world, step_function, *args)
 
     def close(self):
@@ -176,7 +178,9 @@ class NavigatorPanel:
             pygame.draw.rect(screen, (42, 72, 52) if enabled else (25, 43, 34), rect, border_radius=5)
             surface = self.small.render(label, True, (225, 237, 214) if enabled else (95, 119, 105))
             screen.blit(surface, surface.get_rect(center=rect.center))
-        caption = '群れと個体を観察しよう！' if self.ai is not None else '群れと個体の「いま」を見てみよう！'
+        entry = self.annual.displayed()
+        caption = (f"{entry['context']['year']}年目の総括" + ('（途中からの観察）' if entry['context']['partial'] else '')
+                   if entry is not None else '最初の1年間を観察中！')
         screen.blit(self.small.render(caption, True, (155, 186, 165)), (self.rect.x + 12, 51))
         if self.ai is not None:
             self.ai._button(screen, self.small, self.ai_rect, 'AI')
@@ -184,8 +188,9 @@ class NavigatorPanel:
         height = (self.rect.height - 120) // 3
         for i, (species, label, color) in enumerate((('herbivore','草食たち',(171, 219, 143)), ('carnivore','肉食組',(239, 190, 134)))):
             report = self.cards[species]
+            title = f"{label} · {report['count']}匹" if report['count'] is not None else label
             self._card(screen, 78 + i * (height + 8), height,
-                       f"{label} · {report['count']}匹", self._caption(report), report['text'], color)
+                       title, self._caption(report), report['text'], color)
         label = '選択中の個体' if org is not None else '気になる個体を探そう'
         caption = f"{'草食' if org.org_type == 'herbivore' else '肉食'} / 蓄え{org.energy / org.max_energy:.0%}" if org is not None else 'クリックで選択'
         self._card(screen, 78 + 2 * (height + 8), height, label, caption, self.individual['text'], (151, 203, 218))
