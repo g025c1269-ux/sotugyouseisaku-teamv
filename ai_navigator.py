@@ -103,11 +103,8 @@ class AINavigator:
         self._start_next_annual()
 
     def advance(self, world, step_function, step_in_gen, extinct, done):
-        self.annual.recorder.before_step(world)
-        result = step_function(world, step_in_gen, extinct, done)
-        context = self.annual.recorder.after_step(world, result[0] == 0, result[2], result[1])
-        if context is not None and self.annual.add(context):
-            self._start_next_annual()
+        result = self.annual.advance(world, step_function, step_in_gen, extinct, done)
+        self._start_next_annual()
         return result
 
     def _start_next_annual(self):
@@ -203,9 +200,9 @@ class AINavigatorView:
                 if not pending and entry['error']:
                     message = entry['error']
             else:
-                title = '年間総括を待っているよ'
+                title = '最初の1年間を観察中！'
                 text = '1年が終わったら、草食たちと肉食組の変化を振り返るよ。観察メモや個体の解説は、今までどおり確認できるよ！'
-                caption = '年の途中で全種絶滅・計算完了した時も記録'
+                caption = '年末に1回更新 / 途中終了時は記録のみ保存'
             notes = '完成した総括は次の総括まで残るよ。過去の総括は前後ボタンで確認。「reports」に入力データと回答を保存するよ。'
             if history.save_error:
                 notes = history.save_error

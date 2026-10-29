@@ -164,7 +164,7 @@ class GameModeTests(unittest.TestCase):
         os.chdir(self.cwd)
         self.tmp.cleanup()
 
-    def test_rule_no_ai_instance_no_http_live_three_cards_and_detail(self):
+    def test_rule_no_ai_instance_no_http_waiting_three_cards_and_detail(self):
         np.random.seed(1000)
         w = World()
         panel = NavigatorPanel((640, 0, 400, 640))
@@ -173,8 +173,9 @@ class GameModeTests(unittest.TestCase):
         with patch('urllib.request.build_opener', side_effect=AssertionError('network')):
             panel.draw(self.screen, None, w)
             self.assertEqual(len(panel.layouts), 3)
-            self.assertGreater(panel.cards['herbivore']['count'], 0)
-            self.assertGreater(panel.cards['carnivore']['count'], 0)
+            self.assertIsNone(panel.cards['herbivore']['count'])
+            self.assertIsNone(panel.cards['carnivore']['count'])
+            self.assertIn('最初の1年間を観察中', panel.cards['herbivore']['text'])
             selected = w.organisms[0]
             panel.draw(self.screen, selected, w)
             panel.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB), selected, w)
