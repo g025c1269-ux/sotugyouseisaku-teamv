@@ -93,7 +93,8 @@ class OllamaClientTests(unittest.TestCase):
             self.assertEqual(payload['format']['properties']['comment']['maxLength'], 2000)
             self.assertEqual(payload['options']['num_predict'], 512)
             self.assertIs(payload['think'], False)
-            self.assertIn('断定しない', payload['messages'][0]['content'])
+            self.assertEqual([m['role'] for m in payload['messages']], ['user'])
+            self.assertIn('未来は条件付き', payload['messages'][0]['content'])
 
     def test_annual_invalid_response_is_kept_for_audit(self):
         for text in ('あ' * 180, '草食だけ' + 'あ' * 180, '草食と肉食' + 'あ' * 2000):
@@ -139,7 +140,7 @@ class OllamaClientTests(unittest.TestCase):
                 p.write_text(content)
                 with self.assertRaises(OllamaError):
                     OllamaSettings.load(p)
-        self.assertEqual(OllamaSettings.load().model, 'qwen3:4b')
+        self.assertEqual(OllamaSettings.load().model, 'ecosystem-leaf:latest')
 
 
 if __name__ == '__main__':

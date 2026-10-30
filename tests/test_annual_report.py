@@ -68,6 +68,7 @@ class AnnualTests(unittest.TestCase):
     def tearDown(self):
         self.client.release.set()
         self.nav.close()
+        self.finish()  # Drain the finished worker before removing its diagnostic directory.
         config.TEMPERATURE = self.temperature
         self.tmp.cleanup()
 

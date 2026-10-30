@@ -12,6 +12,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
+from annual_ai_context import build_annual_ai_context, is_rule_recital
+
 
 CONFIG_PATH = Path(__file__).with_name('data') / 'ollama_config.json'
 MAX_RESPONSE_BYTES = 65536
@@ -25,19 +27,12 @@ active=falseの形質を行動の理由にしないでください。温度適�
 個体解説では集団との比較も使ってください。将来の絶滅・繁栄・狩りの成功は断定しません。
 与えられていない能力・地形・個体の行動や過去の変化を作らないでください。
 ゲームの設定変更・コマンド・操作指示は出さず、観察のコメントだけを返してください。'''
-ANNUAL_PROMPT = '''あなたは生態系ゲームの明るく親しみやすい案内役「リーフ」です。
-確定した年間データだけから、日本語160〜190文字、5〜6文を目安に年間総括を作ってください。多少の長短より、自然で内容のある文章を優先してください。
-commentだけを持つJSONを返し、見出し・挨拶・思考過程は出さないでください。
-草食と肉食の両方に必ず触れ、特に大きな増減や形質の変化を優先し、数値の羅列は避けてください。
-草食と肉食それぞれについて、仲間の増減、注目する平均形質の変化、その能力がゲームでどう働くかをつなげて話してください。
-気温・季節・食料に観測できた変化があれば一言添え、最後は来年の観察ポイントで締めてください。
-取得できない項目や目立たない変化を無理に埋めず、確認できた事実を丁寧に振り返ってください。
-増減・高低・比較はPythonが確定した結果を使ってください。平均は全員の特徴ではありません。
-partial=trueなら年の途中までの記録であることを伝えてください。nullの平均やイベントは取得不能です。
-災害や行動、過去の出来事を捏造せず、気温や食料が増減の原因だったと断定しないでください。
-active=falseの形質を行動の理由にしないでください。温度適性が高いほど寒さに強いとは限りません。
-最後に次の観察への期待や注意を一言添えても構いません。未来の繁栄や絶滅は断定しません。
-設定変更や操作コマンドは出さず、表示用の文章だけを作ってください。'''
+ANNUAL_PROMPT = '''あなたは生態系ゲームの研究員「リーフ」。明るい相棒の口調で、今年の重要な変化を1〜2個選んで考察します。
+「何が起きた？」→「なぜ起きた可能性がある？」→「この先どうなる可能性がある？」に答えてください。
+観測値を先に使い、参考ルールは今回の変化に当てはめます。原因は「〜かも」と仮説にし、繁殖・遺伝・集団構成など別の説明も考えます。未来は条件付きです。
+草食と肉食・食物・環境のつながりを考えてください。不明な数値や出来事は作らず、材料がない点だけ不明と伝えます。partial=trueは観察した期間だけの話です。
+200〜350文字を目安に、{"comment":"本文"}だけを返します。仕様の列挙、命令文の復唱、「因果は未検証」だけの結びは不要です。'''
+ANNUAL_DATA_MARKER = '\n\n年間観測データ(JSON):\n'
 
 
 class OllamaError(Exception):
@@ -101,14 +96,19 @@ class OllamaExplainer:
         cfg = self.settings
         annual = context.get('target') == 'annual'
         minimum, maximum = (40, 2000) if annual else (40, 80)
-        prompt = ANNUAL_PROMPT if annual else SYSTEM_PROMPT
         if annual:
-            # The audit keeps full snapshots; avoid sending duplicate distributions twice.
-            context = {k: v for k, v in context.items() if k not in ('start', 'end')}
+            # No explicit system: preserve the model's own SYSTEM/TEMPLATE.
+            # Task/persona/reference in the user message also work without one.
+            data = json.dumps(build_annual_ai_context(context), ensure_ascii=False,
+                              allow_nan=False, separators=(',', ':'))
+            messages = [{'role': 'user', 'content': ANNUAL_PROMPT + ANNUAL_DATA_MARKER + data}]
+        else:
+            messages = [{'role': 'system', 'content': SYSTEM_PROMPT},
+                        {'role': 'user', 'content': json.dumps(context, ensure_ascii=False,
+                                                            allow_nan=False, separators=(',', ':'))}]
         payload = {
             'model': cfg.model, 'think': False, 'stream': False, 'keep_alive': cfg.keep_alive,
-            'messages': [{'role': 'system', 'content': prompt},
-                         {'role': 'user', 'content': json.dumps(context, ensure_ascii=False, allow_nan=False, separators=(',', ':'))}],
+            'messages': messages,
             'format': {'type': 'object', 'properties': {'comment': {'type': 'string', 'minLength': minimum, 'maxLength': maximum}},
                        'required': ['comment'], 'additionalProperties': False},
             'options': {'num_predict': min(512, cfg.num_predict * 2) if annual else cfg.num_predict, 'num_ctx': cfg.num_ctx,
@@ -180,6 +180,12 @@ class OllamaExplainer:
                 raise ValueError('Invalid comment')
             if annual and ('草食' not in text or '肉食' not in text):
                 raise ValueError('Both species must be mentioned')
+            if annual and self._is_instruction_echo(text):
+                raise OllamaError('年間データの考察ではなく指示の説明が返ったため、通常解説に切り替えるね。',
+                                  raw.decode('utf-8', errors='replace'), kind='instruction_echo')
+            if annual and is_rule_recital(text):
+                raise OllamaError('観測結果に触れず仕様説明だけが返ったため、通常解説に切り替えるね。',
+                                  raw.decode('utf-8', errors='replace'), kind='rule_recital')
             return text
         except HTTPError as exc:
             if exc.code == 404:
@@ -216,3 +222,22 @@ class OllamaExplainer:
                 result[key] = value
             return result
         return json.loads(repaired, object_pairs_hook=unique)
+
+
+    @staticmethod
+    def _is_instruction_echo(text):
+        """Reject explicit output/procedure instructions, not ordinary advice.
+
+        Deliberately narrow: facts, hypotheses, 'ください', or shared trait words
+        alone are not evidence of an echo. This is not a factuality verifier.
+        """
+        patterns = (
+            r'(?:Python|パイソン).{0,25}(?:確定|計算).{0,30}(?:使って|用いて|参照して|使用して)ください',
+            r'(?:comment|JSON).{0,30}(?:返して|出力して|返します|出力します|キーだけ)',
+            r'(?:回答|解説|文章)(?:では|は).{0,20}(?:観測|仮説|展望).{0,30}(?:含め|順に|説明|書いて|まとめ)',
+            r'(?:システムプロンプト|systemプロンプト|命令文|指示や書き方).{0,30}(?:説明|従|言い換え|復唱)',
+            r'(?:仲間の増減|平均形質の変化).{0,50}(?:つなげて|順に|優先して).{0,12}(?:話して|述べて|説明して|話しています)',
+            r'(?:草食|肉食).{0,20}(?:両方|それぞれ).{0,20}(?:触れ|言及|説明).{0,12}(?:ください|します|しています)',
+        )
+        return any(re.search(pattern, sentence, re.I)
+                   for sentence in re.split(r'[。！？\n]', text) for pattern in patterns)
