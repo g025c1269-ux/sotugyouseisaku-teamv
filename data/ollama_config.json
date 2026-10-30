@@ -1,6 +1,6 @@
 {
   "base_url": "http://localhost:11434",
-  "model": "ecosystem-leaf",
+  "model": "ecosystem-leaf:latest",
   "timeout_seconds": 120,
   "num_predict": 256,
   "num_ctx": 4096,
