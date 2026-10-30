@@ -67,22 +67,3 @@ class NavigatorExplainer:
         return {'count':n, 'means':means, 'distribution':distributions, 'profile':profile,
                 'balanced_fraction':sum(all(r[k] == 'MID' for k in CORE) for r in rows) / n,
                 'text':text}
-
-    def individual(self, org, temperature):
-        if org is None or not org.alive:
-            return {'profile':'none', 'text':self.text['no_selection']}
-        genes = {s['key']:self.classifier.classify(s['key'], org.genes[s['key']])
-                 for s in self.classifier.stats if s['source'] == 'gene'}
-        distributions = {k:{level:int(v == level) for level in ('LOW','MID','HIGH')} for k,v in genes.items()}
-        profile = self._profile([genes], distributions)
-        profile = {'balanced':'individual_balanced', 'varied':'individual_varied'}.get(profile, profile)
-        text = self._variant(self.text['profiles'][profile], org.org_type + '|' + profile + '|individual')
-        import config
-        if org.energy / org.max_energy < .4:
-            text += self.text['energy_low']
-        elif temperature <= 10 and abs(temperature / 40 - org.genes['cold_resistance']) > .35:
-            text += self.text['cold_now']
-        elif org.age >= .85 * config.MAX_AGE:
-            text += self.text['old_age']
-        return {'profile':profile, 'text':text, 'levels':genes,
-                'energy_ratio':org.energy / org.max_energy, 'age':org.age}

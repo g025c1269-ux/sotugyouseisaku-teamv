@@ -129,7 +129,7 @@ class AnnualCadenceTests(unittest.TestCase):
         self.generations(p, config.SEASON_CYCLE)
         for _ in range(20):
             p.draw(self.screen, None, self.w)
-            p.ai.controller.request()  # annual target does not regenerate manually
+            self.assertFalse(hasattr(p.ai.controller, 'request'))
         self.assertEqual(p.cards, frozen)
         self.assertEqual(p.annual.displayed()['context']['year'], 1)
         client.release.set()
@@ -205,17 +205,17 @@ class AnnualCadenceTests(unittest.TestCase):
             p.draw(self.screen, None, self.w)
             self.assertEqual(p.cards, entry['population_reports'])
 
-    def test_frozen_population_does_not_prevent_live_individual_or_detail(self):
+    def test_frozen_population_does_not_prevent_numeric_inspection(self):
         p = self.panel()
         self.generations(p, config.SEASON_CYCLE)
         org = self.w.organisms[0]
         p.draw(self.screen, org, self.w)
-        frozen, individual = copy.deepcopy(p.cards), copy.deepcopy(p.individual)
+        frozen = copy.deepcopy(p.cards)
+        self.assertFalse(hasattr(p, "individual"))
         org.genes['speed'], org.genes['river_tolerance'] = .9, .1
         org.energy = .1 * org.max_energy
         p.draw(self.screen, org, self.w)
         self.assertEqual(p.cards, frozen)
-        self.assertNotEqual(p.individual, individual)
         p.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB), org, self.w)
         p.draw(self.screen, org, self.w)
         self.assertEqual(p.view, 'detail')
@@ -250,7 +250,7 @@ class AnnualCadenceTests(unittest.TestCase):
         before = pygame.surfarray.array3d(self.screen)[:640].copy()
         p.draw(self.screen, None, self.w)
         np.testing.assert_array_equal(before, pygame.surfarray.array3d(self.screen)[:640])
-        self.assertEqual(len(p.layouts), 3)
+        self.assertEqual(len(p.layouts), 2)
         for bubble, font, lines, line_height in p.layouts:
             self.assertLessEqual(len(lines) * line_height, bubble.height - 18)
             self.assertTrue(all(font.size(line)[0] <= bubble.width - 20 for line in lines))

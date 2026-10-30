@@ -32,7 +32,6 @@ from title_screen import _font
 from world import World
 
 ROOT = Path(__file__).resolve().parents[1]
-INDIVIDUAL = '足の速さと川への適応がいい感じだね！移動の幅を広げやすいけど、たくさん動いた時の蓄えには気をつけよう。'
 ANNUAL = '草食たちは年初より仲間が減ったけれど、平均の川適応は上がっているね。川を移動するときの負担を抑えやすい集団になっているのが、注目ポイントだよ！肉食組は数をほぼ保ち、平均の山適応が高めになったみたい。山での移動のしやすさを見てみよう。今年は気温にも変化があったけれど、仲間の増減の理由を気温だけで決めることはできないよ。来年も両方の群れの数と、地形への適応を追いかけていこう！'
 
 
@@ -164,7 +163,7 @@ class GameModeTests(unittest.TestCase):
         os.chdir(self.cwd)
         self.tmp.cleanup()
 
-    def test_rule_no_ai_instance_no_http_waiting_three_cards_and_detail(self):
+    def test_rule_no_ai_instance_no_http_waiting_two_cards_and_numeric_detail(self):
         np.random.seed(1000)
         w = World()
         panel = NavigatorPanel((640, 0, 400, 640))
@@ -172,7 +171,7 @@ class GameModeTests(unittest.TestCase):
         panel.open = True
         with patch('urllib.request.build_opener', side_effect=AssertionError('network')):
             panel.draw(self.screen, None, w)
-            self.assertEqual(len(panel.layouts), 3)
+            self.assertEqual(len(panel.layouts), 2)
             self.assertIsNone(panel.cards['herbivore']['count'])
             self.assertIsNone(panel.cards['carnivore']['count'])
             self.assertIn('最初の1年間を観察中', panel.cards['herbivore']['text'])
@@ -186,30 +185,27 @@ class GameModeTests(unittest.TestCase):
             self.assertEqual(w.step_count, old_step + 1)
         panel.close()
 
-    def test_ai_controller_defaults_to_annual_keeps_rules_and_manual_individual(self):
-        from ollama_explainer import OllamaError
+    def test_ai_selection_never_generates_individual_comment(self):
         np.random.seed(1000)
         w = World()
         panel = NavigatorPanel((640, 0, 400, 640), ai_enabled=True)
         panel.open = True
-        self.assertEqual(panel.view, 'ai')
-        org = w.organisms[0]
+        calls = []
         class Client:
             def generate(self, context):
-                return INDIVIDUAL
+                calls.append(context)
+                return ANNUAL
         panel.ai.controller.client = Client()
-        panel.draw(self.screen, org, w)
-        panel.ai.controller.target = 'individual'
-        self.assertTrue(panel.ai.controller.request())
-        deadline = time.monotonic() + 2
-        while panel.ai.controller.busy and time.monotonic() < deadline:
+        org = w.organisms[0]
+        for _ in range(10):
             panel.draw(self.screen, org, w)
-            time.sleep(.001)
-        self.assertEqual(panel.ai.controller.comments['individual'].text, INDIVIDUAL)
+        self.assertEqual(calls, [])
+        self.assertFalse(hasattr(panel.ai.controller, 'request'))
+        self.assertFalse(hasattr(panel.ai, 'tabs'))
         panel.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=panel.detail_rect.center), org, w)
         panel.draw(self.screen, org, w)
         self.assertEqual(panel.view, 'overview')
-        self.assertEqual(len(panel.layouts), 3)
+        self.assertEqual(len(panel.layouts), 2)
         panel.close()
 
     def test_main_annual_progress_controls_f5_menu_resume_and_quit(self):
@@ -220,7 +216,7 @@ class GameModeTests(unittest.TestCase):
             flip = pygame.display.flip
             class Client:
                 def generate(self, context):
-                    return ANNUAL if context['target'] == 'annual' else INDIVIDUAL
+                    return ANNUAL
             def key(k):
                 pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=k))
             def click(rect):

@@ -88,13 +88,13 @@ class AnnualTests(unittest.TestCase):
     def test_existing_twelve_generation_year_boundary_no_frame_pause_duplicates(self):
         for _ in range(config.SEASON_CYCLE - 1):
             self.nav.advance(self.w, advance_generation, 0, False, False)
-            self.nav.sync(self.w, None)
+            self.nav.poll()
         self.assertFalse(self.client.calls)
         self.nav.advance(self.w, advance_generation, 0, False, False)
         self.assertTrue(self.client.entered.wait(1))
         for _ in range(40):
-            self.nav.sync(self.w, None)
-            self.nav.request()  # annual tab has no manual regeneration
+            self.nav.poll()
+            self.assertFalse(hasattr(self.nav, 'request'))  # no manual/individual request API
         self.assertEqual(len(self.client.calls), 1)
         c = self.client.calls[0]
         self.assertEqual(c['year'], 1)
@@ -162,7 +162,7 @@ class AnnualTests(unittest.TestCase):
         initial = copy.deepcopy(self.w)
         self.year()
         self.w = initial
-        self.nav.sync(self.w, None)
+        self.nav.poll()
         self.year()
         self.finish()
         self.assertEqual([c['year'] for c in self.client.calls], [1])
@@ -201,15 +201,9 @@ class AnnualTests(unittest.TestCase):
         self.assertEqual(data['reports'][1]['raw_response'], TEXT)
         self.assertEqual(data['reports'][1]['request']['context'], self.client.calls[1])
 
-    def test_annual_and_individual_requests_share_same_slot(self):
-        self.nav.sync(self.w, self.w.organisms[0])
-        self.nav.target = 'individual'
-        self.assertTrue(self.nav.request())
-        self.year()
-        self.assertEqual(len(self.client.calls), 1)
-        self.finish()
-        self.assertEqual([c['target'] for c in self.client.calls], ['individual', 'annual'])
-        self.assertEqual(self.client.max_active, 1)
+    def test_no_individual_request_state_or_api(self):
+        for name in ('context', 'target', 'comments', '_selected', 'request', 'sync'):
+            self.assertFalse(hasattr(self.nav, name), name)
 
     def test_close_records_pending_fallback_without_waiting(self):
         self.year(2)

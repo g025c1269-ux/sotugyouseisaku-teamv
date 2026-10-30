@@ -1,4 +1,4 @@
-"""Scrollable, read-only explanation panel over the existing right sidebar."""
+"""Scrollable numeric status inspector; no individual commentary is generated."""
 from pathlib import Path
 
 import pygame
@@ -85,32 +85,49 @@ class StatusPanel:
                      sum(o.alive and o.org_type == 'carnivore' for o in world.organisms))
         if signature == self.signature:
             return
-        r = self.explainer.explain_organism(org, world)
-        state = r['state']
+        import math
+        if not math.isfinite(org.energy) or not math.isfinite(org.max_energy) or org.max_energy <= 0:
+            raise ValueError('Invalid energy/capacity')
+        ratio = max(0., min(1., org.energy / org.max_energy))
+        mode = self.explainer.current_mode()
         zones = {'grassland':'草原', 'river':'川', 'mountain':'山', 'desert':'砂漠', 'sea':'海'}
-        paragraphs = [f"種類：{r['species_label']} / {'生存' if state['alive'] else '死亡'}",
-                      f"エネルギー：{state['energy']:.3f} / {state['max_energy']:.3f}",
-                      f"行動数：{state['age']} / {state['max_age']}",
-                      f"行動方式：{r['mode_label']}",
-                      f"現在地：{zones.get(state['zone'], state['zone'])} ({state['x']}, {state['y']})",
+        zone = world.get_zone(org.x, org.y)
+        paragraphs = [f"種類：{self.explainer.data['species'][org.org_type]} / {'生存' if org.alive else '死亡'}",
+                      f"エネルギー：{org.energy:.3f} / {org.max_energy:.3f}",
+                      f"行動数：{org.age} / {config.MAX_AGE}",
+                      f"行動方式：{self.explainer.modes[mode]}",
+                      f"現在地：{zones.get(zone, zone)} ({org.x}, {org.y})",
                       '【現在の能力・評価】']
         for stat in self.explainer.stats:
             key = stat['key']
-            paragraphs.extend([stat['label'], f"  {r['values'][key]:.6f} [{r['levels'][key]}]"
-                               + (' ※現在の方式では未使用' if key in r['inactive_stats'] else '')])
-        paragraphs += ['LOW＝低い / MID＝普通 / HIGH＝高い',
-                       '評価は値の大小です。高いほど有利とは限りません。',
-                       '【組み合わせ総合解説】', r['summary'],
-                       '【現在の環境との関係】', *r['context'],
-                       '【長所】', *['・' + t for t in r['strengths']],
-                       '【短所・注意点】', *['・' + t for t in r['weaknesses']]]
-        if r['unclassified_genes']:
-            paragraphs += ['未分類：' + '、'.join(r['unclassified_genes'])]
+            value = float(org.genes[key]) if stat['source'] == 'gene' else ratio
+            level = self.explainer.classify(key, value)
+            paragraphs.extend([stat['label'], f"  {value:.6f} [{level}]"
+                               + (' ※現在の方式では未使用' if mode in stat.get('inactive_in', []) else '')])
+        base = (config.HERBIVORE_BASE_ENERGY_COST if org.org_type == 'herbivore'
+                else config.CARNIVORE_BASE_ENERGY_COST) * (0.5 + org.genes['metabolism'])
+        paragraphs += ['LOW＝低い / MID＝普通 / HIGH＝高い', '【現在の消費値】',
+                       f"基本：{base:.3f} / 温度：{org._calc_temp_penalty(world):.3f}",
+                       f"移動1マス：{org._move_energy_cost(world):.3f}"]
+        paragraphs += [f"気温：{config.TEMPERATURE:.1f}℃ / 適温：{org.genes['cold_resistance'] * 40:.1f}℃",
+                       f"繁殖最低行動数：{config.MIN_REPRODUCE_AGE}"]
+        if config.USE_NEUROEVOLUTION:
+            count = sum(p.size for p in org.brain.params()) if org.brain is not None else 0
+            paragraphs.append(f"NNパラメータ数：{count}")
+            if org.org_type == 'carnivore':
+                from organism import CARN_HERB_RATIO_LIMIT
+                herbs = sum(o.alive and o.org_type == 'herbivore' for o in world.organisms)
+                carns = sum(o.alive and o.org_type == 'carnivore' for o in world.organisms)
+                ratio_text = f"{carns / herbs:.3f}" if herbs else '∞'
+                paragraphs.append(f"肉食/草食比：{ratio_text} / 閾値：{CARN_HERB_RATIO_LIMIT}")
+        unknown = sorted(set(org.genes) - {s['key'] for s in self.explainer.stats if s['source'] == 'gene'})
+        if unknown:
+            paragraphs.append('未分類：' + '、'.join(unknown))
         self.lines = []
         for paragraph in paragraphs:
             color = (155, 211, 144) if paragraph.startswith('【') else (225, 233, 227)
             self.lines.extend((line, color) for line in self._wrap(paragraph))
-            if paragraph.startswith('【') or paragraph in (r['summary'], *r['context']):
+            if paragraph.startswith('【'):
                 self.lines.append(('', color))
         self.content_height = len(self.lines) * 23
         self.scroll = min(self.scroll, self.max_scroll)
@@ -130,7 +147,7 @@ class StatusPanel:
             self.content_height = len(self.lines) * 23
             self.scroll = 0
         pygame.draw.rect(screen, (13, 28, 22), self.rect)
-        screen.blit(self.heading.render('生物のステータス解説', True, (235, 245, 230)), (self.rect.x + 16, 18))
+        screen.blit(self.heading.render('生物のステータス', True, (235, 245, 230)), (self.rect.x + 16, 18))
         pygame.draw.rect(screen, (43, 73, 53), self.close_rect, border_radius=5)
         screen.blit(self.font.render('閉じる', True, (240, 245, 235)), (self.close_rect.x + 8, self.close_rect.y + 5))
         screen.blit(self.font.render('N：表示切替 / ホイール：スクロール', True, (161, 188, 167)), (self.rect.x + 16, 57))

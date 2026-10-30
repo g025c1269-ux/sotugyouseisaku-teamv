@@ -50,14 +50,10 @@ class NavigatorTests(unittest.TestCase):
         r = self.engine.population([animal(speed=.9, river_tolerance=.1) for _ in range(10)], 'herbivore', 20)
         self.assertEqual(r['profile'], 'speed_river')
 
-    def test_extinction_single_and_no_selection(self):
+    def test_extinction_and_single_member_population(self):
         self.assertEqual(self.engine.population([], 'herbivore', 20)['count'], 0)
         r = self.engine.population([animal()], 'herbivore', 20)
         self.assertIn('1匹', r['text'])
-        self.assertEqual(self.engine.individual(None, 20)['profile'], 'none')
-        dead = animal()
-        dead.alive = False
-        self.assertEqual(self.engine.individual(dead, 20)['profile'], 'none')
 
     def test_short_text_all_profiles_and_variations(self):
         for variants in self.engine.text['profiles'].values():
@@ -75,8 +71,8 @@ class NavigatorTests(unittest.TestCase):
     def test_temperature_and_unused_gene_do_not_invent_advantages(self):
         a = animal(cold_resistance=.9, hunger_threshold=.1)
         b = animal(cold_resistance=.9, hunger_threshold=.9)
-        first = self.engine.individual(a, 5)
-        self.assertEqual(first['text'], self.engine.individual(b, 5)['text'])
+        first = self.engine.population([a]*10, 'herbivore', 5)
+        self.assertEqual(first['text'], self.engine.population([b]*10, 'herbivore', 5)['text'])
         self.assertIn('寒い今', first['text'])
         self.assertNotIn('寒さに強い', first['text'])
         self.assertNotIn('逃げるのが得意', first['text'])
@@ -88,7 +84,6 @@ class NavigatorTests(unittest.TestCase):
         py_rng, np_rng = random.getstate(), np.random.get_state()
         for species in ('herbivore', 'carnivore'):
             self.engine.population(members, species, 5)
-            self.engine.individual(members[0], 5)
         self.assertEqual([vars(a) for a in members], [vars(a) for a in before])
         self.assertEqual(random.getstate(), py_rng)
         after = np.random.get_state()
@@ -107,33 +102,31 @@ class NavigatorLayoutTests(unittest.TestCase):
         self.pg = pygame
         self.screen = pygame.display.set_mode((1040, 640))
         self.panel = NavigatorPanel((640, 0, 400, 640))
+        self.panel.open = True
         self.world = SimpleNamespace(organisms=[animal(), animal('carnivore')], step_count=0)
 
     def tearDown(self):
         self.pg.quit()
 
-    def test_unselected_three_cards_refresh_and_map_preservation(self):
+    def test_two_annual_cards_and_map_preservation(self):
         self.screen.fill((85, 25, 60))
         before = self.pg.surfarray.array3d(self.screen)[:640].copy()
         self.panel.draw(self.screen, None, self.world)
         self.assertTrue(self.panel.open)
-        self.assertEqual(len(self.panel.layouts), 3)
-        self.assertEqual(self.panel.individual['profile'], 'none')
+        self.assertEqual(len(self.panel.layouts), 2)
+        self.assertFalse(hasattr(self.panel, 'individual'))
         np.testing.assert_array_equal(before, self.pg.surfarray.array3d(self.screen)[:640])
+        frozen = copy.deepcopy(self.panel.cards)
         self.world.organisms.clear()
         self.world.step_count += 1
         self.panel.draw(self.screen, None, self.world)
-        self.assertTrue(all(r['count'] == 0 for r in self.panel.cards.values()))
-        # A rewound/replaced world with the same step count must refresh too.
-        replacement = SimpleNamespace(organisms=[animal()], step_count=1)
-        self.panel.draw(self.screen, None, replacement)
-        self.assertEqual(self.panel.cards['herbivore']['count'], 1)
+        self.assertEqual(self.panel.cards, frozen)  # still waiting for the first year end
 
     def test_all_wordings_fit_speech_bubbles(self):
-        for variants in self.panel.explainer.text['profiles'].values():
+        for variants in NavigatorExplainer().text['profiles'].values():
             for text in variants:
                 self.panel.layouts = []
-                self.panel._card(self.screen, 78, 173, 'テスト', '', text + self.panel.explainer.text['energy_low'], (180,210,140))
+                self.panel._card(self.screen, 78, 173, 'テスト', '', text + NavigatorExplainer().text['energy_low'], (180,210,140))
                 for bubble, font, lines, line_height in self.panel.layouts:
                     self.assertLessEqual(len(lines) * line_height, bubble.height - 18)
                     self.assertTrue(all(font.size(line)[0] <= bubble.width - 20 for line in lines))

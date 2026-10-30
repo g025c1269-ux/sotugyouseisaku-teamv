@@ -12,7 +12,7 @@ from urllib.error import URLError
 from ollama_explainer import MAX_RESPONSE_BYTES, OllamaError, OllamaExplainer, OllamaSettings
 
 
-COMMENT = '足の速さと川への適応がいい感じだね！移動の幅を広げやすいけど、たくさん動いた時の蓄えには気をつけよう。'
+COMMENT = '草食たちも肉食組も数を保ったね。食べ物と消費の釣り合いが関係したのかも。来年も両方の群れを見守ろう！'
 
 
 class OllamaClientTests(unittest.TestCase):
@@ -43,45 +43,50 @@ class OllamaClientTests(unittest.TestCase):
     def setUp(self):
         type(self).status = 200
         self.set_comment(COMMENT)
+        self.context = {'target': 'annual', 'year': 1, 'snapshot': {'step': 2}}
         self.client = OllamaExplainer(OllamaSettings(base_url=f'http://127.0.0.1:{self.server.server_port}'))
 
     def set_comment(self, text):
         type(self).response = json.dumps({'done': True, 'message': {'content': json.dumps({'comment': text}, ensure_ascii=False)}}).encode()
 
-    def test_official_api_payload_for_all_targets(self):
-        for target in ('herbivore', 'carnivore', 'individual'):
-            self.assertEqual(self.client.generate({'target': target, 'snapshot': {'step': 2}}), COMMENT)
-            path, payload = self.calls[-1]
-            self.assertEqual(path, '/api/chat')
-            self.assertEqual(payload['model'], 'qwen3:4b')
-            self.assertIs(payload['think'], False)
-            self.assertIs(payload['stream'], False)
-            self.assertEqual(payload['options']['num_predict'], 256)
-            self.assertEqual(payload['options']['num_thread'], 4)
-            self.assertEqual(json.loads(payload['messages'][1]['content'])['target'], target)
-            self.assertEqual(payload['format']['properties']['comment']['maxLength'], 80)
+    def test_official_api_payload_is_annual_only(self):
+        self.assertEqual(self.client.generate(self.context), COMMENT)
+        path, payload = self.calls[-1]
+        self.assertEqual(path, '/api/chat')
+        self.assertEqual(payload['model'], 'qwen3:4b')
+        self.assertIs(payload['think'], False)
+        self.assertIs(payload['stream'], False)
+        self.assertEqual(payload['options']['num_predict'], 512)
+        self.assertEqual(payload['options']['num_thread'], 4)
+        self.assertEqual([m['role'] for m in payload['messages']], ['user'])
+        self.assertEqual(payload['format']['properties']['comment']['maxLength'], 2000)
+        before = len(self.calls)
+        for target in ('individual', 'herbivore', 'carnivore'):
+            with self.assertRaisesRegex(OllamaError, '年間総括'):
+                self.client.generate({'target': target})
+        self.assertEqual(len(self.calls), before)
 
     def test_error_missing_model_malformed_truncated_and_large_response(self):
         type(self).status = 404
         with self.assertRaisesRegex(OllamaError, 'モデル'):
-            self.client.generate({})
+            self.client.generate(self.context)
         type(self).status = 500
         with self.assertRaisesRegex(OllamaError, '応答'):
-            self.client.generate({})
+            self.client.generate(self.context)
         type(self).status = 200
         for raw in (b'not JSON', b'[]', b'{}', b'{"done": false}', b'x' * (MAX_RESPONSE_BYTES + 1)):
             type(self).response = raw
             with self.assertRaises(OllamaError):
-                self.client.generate({})
+                self.client.generate(self.context)
 
     def test_reject_invalid_text_and_accept_character_boundaries(self):
-        for text in ('', '短すぎるよ。', 'あ' * 81, 'a' * 50, '<think>' + 'あ' * 45, None, 123):
+        for text in ('', '短すぎるよ。', 'あ' * 2001, 'a' * 50, '<think>' + 'あ' * 45, None, 123):
             self.set_comment(text)
             with self.assertRaises(OllamaError):
-                self.client.generate({})
+                self.client.generate(self.context)
         for n in (40, 80):
-            self.set_comment('あ' * n)
-            self.assertEqual(len(self.client.generate({})), n)
+            self.set_comment('草食と肉食' + 'あ' * (n - len('草食と肉食')))
+            self.assertEqual(len(self.client.generate(self.context)), n)
 
     def test_annual_request_limits_both_species_and_separate_prompt(self):
         for n in (160, 190):
@@ -109,7 +114,7 @@ class OllamaClientTests(unittest.TestCase):
             with patch('ollama_explainer.build_opener') as opener:
                 opener.return_value.open.side_effect = exc
                 with self.assertRaisesRegex(OllamaError, message):
-                    self.client.generate({})
+                    self.client.generate(self.context)
                 self.assertEqual(opener.return_value.open.call_args.kwargs['timeout'], 60)
 
     def test_actual_connection_refusal(self):
@@ -118,13 +123,13 @@ class OllamaClientTests(unittest.TestCase):
             bound.bind(('127.0.0.1', 0))
             cfg = OllamaSettings(base_url=f'http://127.0.0.1:{bound.getsockname()[1]}', timeout_seconds=1)
             with self.assertRaisesRegex(OllamaError, 'つながらない'):
-                OllamaExplainer(cfg).generate({})
+                OllamaExplainer(cfg).generate(self.context)
 
     def test_proxy_bypass_and_no_external_redirects(self):
         from ollama_explainer import _NoRedirect
         self.assertIsNone(_NoRedirect().redirect_request(None, None, 302, '', {}, 'https://example.com'))
         with patch('ollama_explainer.build_opener', wraps=__import__('urllib.request', fromlist=['build_opener']).build_opener) as build:
-            self.client.generate({})
+            self.client.generate(self.context)
             self.assertEqual(build.call_args.args[0].proxies, {})
 
     def test_settings_are_local_bounded_and_config_errors_do_not_escape(self):

@@ -1,7 +1,7 @@
 """Assistant overview in the existing sidebar; detailed inspector stays available."""
 import pygame
 
-from navigator_explainer import NavigatorExplainer, PROFILE_NAMES
+from navigator_explainer import PROFILE_NAMES
 from annual_report import AnnualHistory, waiting_population_reports
 from status_panel import StatusPanel as DetailedPanel
 
@@ -9,7 +9,6 @@ from status_panel import StatusPanel as DetailedPanel
 class NavigatorPanel:
     def __init__(self, rect, ai_enabled=False):
         self.rect = pygame.Rect(rect)
-        self.explainer = NavigatorExplainer()
         self.detail = DetailedPanel(rect)
         self.font = self.detail._font(15)
         self.small = self.detail._font(13)
@@ -20,7 +19,6 @@ class NavigatorPanel:
         self.close_rect = pygame.Rect(self.rect.right - 65, 12, 53, 28)
         self.detail_rect = pygame.Rect(self.rect.right - 128, 12, 56, 28)
         self.cards = waiting_population_reports()
-        self.individual = {}
         self.layouts = []
         self._annual_entry = None
         self.ai = None
@@ -36,15 +34,13 @@ class NavigatorPanel:
             org = None
         if org is not self.selected:
             self.selected = org
-            if self.view != 'ai':
+            if org is None and self.view == 'detail':
                 self.view = 'overview'
-            if org is not None:
-                self.open = True
 
     def handle_event(self, event, org, world=None):
         self._sync_selection(org)
         if world is not None and self.ai is not None:
-            self.ai.controller.sync(world, org)
+            self.ai.controller.poll()
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_n:
                 self.open = not self.open
@@ -83,12 +79,10 @@ class NavigatorPanel:
         return event.type == pygame.MOUSEWHEEL and self.rect.collidepoint(pygame.mouse.get_pos())
 
     def _refresh(self, world, org):
-        import config
         entry = self.annual.displayed()
         if entry is not self._annual_entry:
             self.cards = entry['population_reports'] if entry is not None else waiting_population_reports()
             self._annual_entry = entry
-        self.individual = self.explainer.individual(org, config.TEMPERATURE)
 
     def _wrap(self, text, font, width):
         lines, line = [], ''
@@ -163,7 +157,7 @@ class NavigatorPanel:
             org = None
         self._sync_selection(org)
         if self.ai is not None:
-            self.ai.controller.sync(world, org)
+            self.ai.controller.poll()
         if not self.open:
             return
         if self.view == 'detail' and org is not None:
@@ -171,7 +165,7 @@ class NavigatorPanel:
             return
         self._refresh(world, org)
         if self.view == 'ai':
-            self.ai.draw(screen, self, world, org)
+            self.ai.draw(screen, self)
             return
         pygame.draw.rect(screen, (12, 29, 23), self.rect)
         self._mascot(screen, (self.rect.x + 25, 30), (173, 209, 138))
@@ -188,13 +182,10 @@ class NavigatorPanel:
         if self.ai is not None:
             self.ai._button(screen, self.small, self.ai_rect, 'AI')
         self.layouts = []
-        height = (self.rect.height - 120) // 3
+        height = (self.rect.height - 120) // 2
         for i, (species, label, color) in enumerate((('herbivore','草食たち',(171, 219, 143)), ('carnivore','肉食組',(239, 190, 134)))):
             report = self.cards[species]
             title = f"{label} · {report['count']}匹" if report['count'] is not None else label
             self._card(screen, 78 + i * (height + 8), height,
                        title, self._caption(report), report['text'], color)
-        label = '選択中の個体' if org is not None else '気になる個体を探そう'
-        caption = f"{'草食' if org.org_type == 'herbivore' else '肉食'} / 蓄え{org.energy / org.max_energy:.0%}" if org is not None else 'クリックで選択'
-        self._card(screen, 78 + 2 * (height + 8), height, label, caption, self.individual['text'], (151, 203, 218))
-        screen.blit(self.small.render('N:元の表示 / Tab:個体詳細 / Esc:終了', True, (156, 183, 166)), (self.rect.x + 12, self.rect.bottom - 24))
+        screen.blit(self.small.render('N:元の表示 / Tab:数値詳細 / Esc:終了', True, (156, 183, 166)), (self.rect.x + 12, self.rect.bottom - 24))

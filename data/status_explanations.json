@@ -12,22 +12,7 @@
         0.3333333333333333,
         0.6666666666666666
       ],
-      "source": "gene",
-      "descriptions": {
-        "LOW": "低温側の気温に適合しやすい値です。",
-        "MID": "中間の気温に適合しやすい値です。",
-        "HIGH": "高温側の気温に適合しやすい値です。"
-      },
-      "strengths": {
-        "LOW": "低温側で気温との差を小さくしやすい",
-        "MID": "中間の気温で消耗を抑えやすい",
-        "HIGH": "高温側で気温との差を小さくしやすい"
-      },
-      "weaknesses": {
-        "LOW": "高温側では気温との差が広がりやすい",
-        "MID": "低温・高温の両端では消耗に注意",
-        "HIGH": "低温側では気温との差が広がりやすい"
-      }
+      "source": "gene"
     },
     {
       "key": "speed",
@@ -36,22 +21,7 @@
         0.4,
         0.6
       ],
-      "source": "gene",
-      "descriptions": {
-        "LOW": "2マス移動の確率が低く、移動で消費する量を抑えやすい個体です。",
-        "MID": "1マス移動と2マス移動を組み合わせる個体です。",
-        "HIGH": "2マス移動を選ぶ確率が高く、移動範囲を広げやすい個体です。"
-      },
-      "strengths": {
-        "LOW": "2マス移動に伴う追加消費を抑えやすい",
-        "MID": "移動距離と消費が中間的",
-        "HIGH": "2マス移動が起こりやすい"
-      },
-      "weaknesses": {
-        "LOW": "移動距離を伸ばしにくい",
-        "MID": "長距離移動にも省エネにも特化しない",
-        "HIGH": "2マス進むと移動エネルギーも2回分必要"
-      }
+      "source": "gene"
     },
     {
       "key": "hunger_threshold",
@@ -61,21 +31,6 @@
         0.6
       ],
       "source": "gene",
-      "descriptions": {
-        "LOW": "エネルギーが十分でも繁殖の優先度が上がりにくい値です。",
-        "MID": "エネルギーが十分なとき、繁殖が候補に入りやすくなる値です。",
-        "HIGH": "エネルギーが十分なとき、繁殖の優先度を高める値です。"
-      },
-      "strengths": {
-        "LOW": "繁殖によるエネルギー支出が起こりにくい",
-        "MID": "充足時に繁殖を選ぶ余地がある",
-        "HIGH": "充足時の繁殖スコアが高い"
-      },
-      "weaknesses": {
-        "LOW": "次世代を残す行動を選びにくい",
-        "MID": "周囲の状況によって繁殖以外を選ぶ",
-        "HIGH": "実際に繁殖するとエネルギーを支出する"
-      },
       "inactive_in": [
         "nn"
       ]
@@ -87,22 +42,7 @@
         0.3333333333333333,
         0.6666666666666666
       ],
-      "source": "gene",
-      "descriptions": {
-        "LOW": "基本消費が小さい一方、蓄えられるエネルギー容量も小さい個体です。",
-        "MID": "基本消費とエネルギー容量が中間的な個体です。",
-        "HIGH": "エネルギー容量が大きい一方、基本消費も大きい個体です。"
-      },
-      "strengths": {
-        "LOW": "毎ステップの基本消費が小さい",
-        "MID": "消費と容量が中間的",
-        "HIGH": "多くのエネルギーを蓄えられる"
-      },
-      "weaknesses": {
-        "LOW": "エネルギー容量が小さい",
-        "MID": "省エネにも大容量にも特化しない",
-        "HIGH": "毎ステップの基本消費が大きい"
-      }
+      "source": "gene"
     },
     {
       "key": "river_tolerance",
@@ -111,22 +51,7 @@
         0.4,
         0.8
       ],
-      "source": "gene",
-      "descriptions": {
-        "LOW": "川での1マスあたりの移動コストが大きい個体です。",
-        "MID": "川での移動コストをある程度抑える個体です。",
-        "HIGH": "川での移動コストを小さくできる個体です。"
-      },
-      "strengths": {
-        "LOW": "草原・砂漠では川適応による移動加算がない",
-        "MID": "川での移動コストをある程度抑えられる",
-        "HIGH": "川での移動コストを小さくできる"
-      },
-      "weaknesses": {
-        "LOW": "川での移動消費が大きい",
-        "MID": "川での移動にはなお追加消費がある",
-        "HIGH": "地形適応が高くても、移動回数が増えると消費は積み重なる"
-      }
+      "source": "gene"
     },
     {
       "key": "mountain_tolerance",
@@ -135,22 +60,7 @@
         0.3333333333333333,
         0.6666666666666666
       ],
-      "source": "gene",
-      "descriptions": {
-        "LOW": "山での1マスあたりの移動コストが大きい個体です。",
-        "MID": "山での移動コストをある程度抑える個体です。",
-        "HIGH": "山での移動コストを小さくできる個体です。"
-      },
-      "strengths": {
-        "LOW": "草原・砂漠では山適応による移動加算がない",
-        "MID": "山での移動コストをある程度抑えられる",
-        "HIGH": "山での移動コストを小さくできる"
-      },
-      "weaknesses": {
-        "LOW": "山での移動消費が大きい",
-        "MID": "山での移動にはなお追加消費がある",
-        "HIGH": "地形適応が高くても、移動回数が増えると消費は積み重なる"
-      }
+      "source": "gene"
     },
     {
       "key": "energy_ratio",
@@ -159,402 +69,9 @@
         0.4,
         0.8
       ],
-      "source": "energy_ratio",
-      "descriptions": {
-        "LOW": "蓄えが少なく、補給を優先したい状態です。",
-        "MID": "蓄えはありますが、繁殖候補になる80%には届いていません。",
-        "HIGH": "繁殖に必要なエネルギー条件の80%以上を満たしています。繁殖の実行には行動方式ごとの条件も関わります。"
-      },
-      "strengths": {
-        "LOW": "空き容量があり補給で回復する余地が大きい",
-        "MID": "一定のエネルギーを保持している",
-        "HIGH": "繁殖のエネルギー条件を満たす"
-      },
-      "weaknesses": {
-        "LOW": "消耗が続くとエネルギー切れに近づく",
-        "MID": "繁殖のエネルギー条件を満たしていない",
-        "HIGH": "繁殖の実行は周囲と行動スコアにも左右される"
-      }
+      "source": "energy_ratio"
     }
   ],
-  "relations": [
-    {
-      "id": "speed_metabolism_LOW_LOW",
-      "when": {
-        "speed": "LOW",
-        "metabolism": "LOW"
-      },
-      "text": "移動距離を伸ばしにくい代わりに、2マス移動の追加消費と基本消費を抑えやすい組み合わせです。"
-    },
-    {
-      "id": "speed_metabolism_LOW_MID",
-      "when": {
-        "speed": "LOW",
-        "metabolism": "MID"
-      },
-      "text": "移動速度は「控えめ」、代謝は「中間的」の組み合わせで、移動距離と蓄えの使い方に特徴があります。"
-    },
-    {
-      "id": "speed_metabolism_LOW_HIGH",
-      "when": {
-        "speed": "LOW",
-        "metabolism": "HIGH"
-      },
-      "text": "移動距離は控えめでも容量は大きく、移動していない間も大きな基本消費が続きます。"
-    },
-    {
-      "id": "speed_metabolism_MID_LOW",
-      "when": {
-        "speed": "MID",
-        "metabolism": "LOW"
-      },
-      "text": "移動速度は「中間的」、代謝は「低消費・小容量」の組み合わせで、移動距離と蓄えの使い方に特徴があります。"
-    },
-    {
-      "id": "speed_metabolism_MID_MID",
-      "when": {
-        "speed": "MID",
-        "metabolism": "MID"
-      },
-      "text": "移動速度は「中間的」、代謝は「中間的」の組み合わせで、移動距離と蓄えの使い方に特徴があります。"
-    },
-    {
-      "id": "speed_metabolism_MID_HIGH",
-      "when": {
-        "speed": "MID",
-        "metabolism": "HIGH"
-      },
-      "text": "移動速度は「中間的」、代謝は「高消費・大容量」の組み合わせで、移動距離と蓄えの使い方に特徴があります。"
-    },
-    {
-      "id": "speed_metabolism_HIGH_LOW",
-      "when": {
-        "speed": "HIGH",
-        "metabolism": "LOW"
-      },
-      "text": "移動範囲を広げながら基本消費を抑えられますが、容量は小さく、2マス移動時の支出に注意が必要です。"
-    },
-    {
-      "id": "speed_metabolism_HIGH_MID",
-      "when": {
-        "speed": "HIGH",
-        "metabolism": "MID"
-      },
-      "text": "移動速度は「高め」、代謝は「中間的」の組み合わせで、移動距離と蓄えの使い方に特徴があります。"
-    },
-    {
-      "id": "speed_metabolism_HIGH_HIGH",
-      "when": {
-        "speed": "HIGH",
-        "metabolism": "HIGH"
-      },
-      "text": "広く移動できて容量も大きい一方、移動と維持の両方で消費が増えやすく、補給が重要です。"
-    },
-    {
-      "id": "terrain_LOW_LOW",
-      "when": {
-        "river_tolerance": "LOW",
-        "mountain_tolerance": "LOW"
-      },
-      "text": "川と山のどちらでも移動消費が大きく、地形内での移動回数に注意が必要です。"
-    },
-    {
-      "id": "terrain_LOW_MID",
-      "when": {
-        "river_tolerance": "LOW",
-        "mountain_tolerance": "MID"
-      },
-      "text": "移動コストの面では川が苦手、山が中間的という地形適応の組み合わせです。"
-    },
-    {
-      "id": "terrain_LOW_HIGH",
-      "when": {
-        "river_tolerance": "LOW",
-        "mountain_tolerance": "HIGH"
-      },
-      "text": "移動コストの面では川が苦手、山が得意という地形適応の組み合わせです。"
-    },
-    {
-      "id": "terrain_MID_LOW",
-      "when": {
-        "river_tolerance": "MID",
-        "mountain_tolerance": "LOW"
-      },
-      "text": "移動コストの面では川が中間的、山が苦手という地形適応の組み合わせです。"
-    },
-    {
-      "id": "terrain_MID_MID",
-      "when": {
-        "river_tolerance": "MID",
-        "mountain_tolerance": "MID"
-      },
-      "text": "移動コストの面では川が中間的、山が中間的という地形適応の組み合わせです。"
-    },
-    {
-      "id": "terrain_MID_HIGH",
-      "when": {
-        "river_tolerance": "MID",
-        "mountain_tolerance": "HIGH"
-      },
-      "text": "移動コストの面では川が中間的、山が得意という地形適応の組み合わせです。"
-    },
-    {
-      "id": "terrain_HIGH_LOW",
-      "when": {
-        "river_tolerance": "HIGH",
-        "mountain_tolerance": "LOW"
-      },
-      "text": "移動コストの面では川が得意、山が苦手という地形適応の組み合わせです。"
-    },
-    {
-      "id": "terrain_HIGH_MID",
-      "when": {
-        "river_tolerance": "HIGH",
-        "mountain_tolerance": "MID"
-      },
-      "text": "移動コストの面では川が得意、山が中間的という地形適応の組み合わせです。"
-    },
-    {
-      "id": "terrain_HIGH_HIGH",
-      "when": {
-        "river_tolerance": "HIGH",
-        "mountain_tolerance": "HIGH"
-      },
-      "text": "川と山の両方で移動消費を抑えやすく、地形をまたぐ移動に向いた組み合わせです。"
-    },
-    {
-      "id": "reproduction_LOW_LOW",
-      "when": {
-        "hunger_threshold": "LOW",
-        "energy_ratio": "LOW"
-      },
-      "text": "蓄えが少なく繁殖条件を満たせないうえ、繁殖の重みも低いため、補給とエネルギー維持が重要な状態です。",
-      "mode": "rule"
-    },
-    {
-      "id": "reproduction_LOW_MID",
-      "when": {
-        "hunger_threshold": "LOW",
-        "energy_ratio": "MID"
-      },
-      "text": "一定の蓄えはあっても80%未満で繁殖候補にならず、繁殖の重みも低いため次世代を残す行動につながりにくい組み合わせです。",
-      "mode": "rule"
-    },
-    {
-      "id": "reproduction_LOW_HIGH",
-      "when": {
-        "hunger_threshold": "LOW",
-        "energy_ratio": "HIGH"
-      },
-      "text": "蓄えが80%以上でも、繁殖の重みが低いため繁殖スコアがランダム移動を下回る組み合わせです。",
-      "mode": "rule"
-    },
-    {
-      "id": "reproduction_MID_LOW",
-      "when": {
-        "hunger_threshold": "MID",
-        "energy_ratio": "LOW"
-      },
-      "text": "繁殖の重みは中間的ですが、蓄えが少ないため繁殖より補給を必要とする状態です。",
-      "mode": "rule"
-    },
-    {
-      "id": "reproduction_MID_MID",
-      "when": {
-        "hunger_threshold": "MID",
-        "energy_ratio": "MID"
-      },
-      "text": "繁殖の重みと蓄えは中間的ですが、まず蓄えが80%に届いてから他行動との比較で繁殖が決まります。",
-      "mode": "rule"
-    },
-    {
-      "id": "reproduction_MID_HIGH",
-      "when": {
-        "hunger_threshold": "MID",
-        "energy_ratio": "HIGH"
-      },
-      "text": "蓄えは繁殖条件を満たし、繁殖の重みも中間的なので、エネルギーの割合と他行動のスコア次第で繁殖を選びます。",
-      "mode": "rule"
-    },
-    {
-      "id": "reproduction_HIGH_LOW",
-      "when": {
-        "hunger_threshold": "HIGH",
-        "energy_ratio": "LOW"
-      },
-      "text": "繁殖の重みは高いものの、蓄えが少なく繁殖は候補に入らないため、まず補給が必要です。",
-      "mode": "rule"
-    },
-    {
-      "id": "reproduction_HIGH_MID",
-      "when": {
-        "hunger_threshold": "HIGH",
-        "energy_ratio": "MID"
-      },
-      "text": "繁殖の重みは高く、蓄えもある程度ありますが、80%に達するまでは繁殖を選べません。",
-      "mode": "rule"
-    },
-    {
-      "id": "reproduction_HIGH_HIGH",
-      "when": {
-        "hunger_threshold": "HIGH",
-        "energy_ratio": "HIGH"
-      },
-      "text": "蓄えと繁殖の重みがともに高く、他行動との比較や周囲の条件がそろえば繁殖を選びやすい状態です。",
-      "mode": "rule"
-    },
-    {
-      "id": "temperature_speed_LOW_LOW",
-      "when": {
-        "speed": "LOW",
-        "cold_resistance": "LOW"
-      },
-      "text": "移動距離は控えめですが、温度適性は低温側に寄っています。速さそのものは気温による消耗を減らしません。"
-    },
-    {
-      "id": "temperature_speed_LOW_MID",
-      "when": {
-        "speed": "LOW",
-        "cold_resistance": "MID"
-      },
-      "text": "移動距離は控えめですが、温度適性は中間の気温に寄っています。速さそのものは気温による消耗を減らしません。"
-    },
-    {
-      "id": "temperature_speed_LOW_HIGH",
-      "when": {
-        "speed": "LOW",
-        "cold_resistance": "HIGH"
-      },
-      "text": "移動距離は控えめですが、温度適性は高温側に寄っています。速さそのものは気温による消耗を減らしません。"
-    },
-    {
-      "id": "temperature_speed_MID_LOW",
-      "when": {
-        "speed": "MID",
-        "cold_resistance": "LOW"
-      },
-      "text": "移動距離は中間的で、温度適性は低温側に寄っています。速さそのものは気温による消耗を減らしません。"
-    },
-    {
-      "id": "temperature_speed_MID_MID",
-      "when": {
-        "speed": "MID",
-        "cold_resistance": "MID"
-      },
-      "text": "移動距離は中間的で、温度適性は中間の気温に寄っています。速さそのものは気温による消耗を減らしません。"
-    },
-    {
-      "id": "temperature_speed_MID_HIGH",
-      "when": {
-        "speed": "MID",
-        "cold_resistance": "HIGH"
-      },
-      "text": "移動距離は中間的で、温度適性は高温側に寄っています。速さそのものは気温による消耗を減らしません。"
-    },
-    {
-      "id": "temperature_speed_HIGH_LOW",
-      "when": {
-        "speed": "HIGH",
-        "cold_resistance": "LOW"
-      },
-      "text": "移動範囲を広げやすく、温度適性は低温側に寄っています。速さそのものは気温による消耗を減らしません。"
-    },
-    {
-      "id": "temperature_speed_HIGH_MID",
-      "when": {
-        "speed": "HIGH",
-        "cold_resistance": "MID"
-      },
-      "text": "移動範囲を広げやすく、温度適性は中間の気温に寄っています。速さそのものは気温による消耗を減らしません。"
-    },
-    {
-      "id": "temperature_speed_HIGH_HIGH",
-      "when": {
-        "speed": "HIGH",
-        "cold_resistance": "HIGH"
-      },
-      "text": "移動範囲を広げやすく、温度適性は高温側に寄っています。速さそのものは気温による消耗を減らしません。"
-    },
-    {
-      "id": "herbivore_role",
-      "when": {},
-      "text": "草食動物は近くの天敵からの逃走を最優先します。速度は逃走時の移動距離にも関わります。",
-      "species": "herbivore",
-      "mode": "rule"
-    },
-    {
-      "id": "carnivore_role",
-      "when": {},
-      "text": "肉食動物の繁殖スコアには近くの草食動物の数も影響します。速度だけで狩りの成功が保証されるわけではありません。",
-      "species": "carnivore",
-      "mode": "rule"
-    },
-    {
-      "id": "nn_energy_LOW",
-      "mode": "nn",
-      "when": {
-        "energy_ratio": "LOW"
-      },
-      "text": "蓄えが少なく、NNの繁殖出力はエネルギー条件によって選択対象から外されます。移動・待機の選び方はNNが決めるため、自動で補給を最優先するとは限りません。"
-    },
-    {
-      "id": "nn_energy_MID",
-      "mode": "nn",
-      "when": {
-        "energy_ratio": "MID"
-      },
-      "text": "一定の蓄えはありますが80%未満なので、NNの繁殖出力はまだ選択対象に入りません。補給を伴う移動を選べるかはNNの出力によります。"
-    },
-    {
-      "id": "nn_energy_HIGH",
-      "mode": "nn",
-      "when": {
-        "energy_ratio": "HIGH"
-      },
-      "text": "蓄えは繁殖のエネルギー条件を満たします。ただしNNが繁殖を選ぶことに加え、行動数や種ごとの追加条件も必要です。"
-    },
-    {
-      "id": "nn_herbivore_role",
-      "mode": "nn",
-      "species": "herbivore",
-      "when": {},
-      "text": "草食動物は食物・天敵の相対位置などをNNに入力し、移動・待機・繁殖を選びます。移動先で食物を食べますが、天敵から逃げることが常に最優先になる仕組みではありません。"
-    },
-    {
-      "id": "nn_carnivore_role",
-      "mode": "nn",
-      "species": "carnivore",
-      "when": {},
-      "text": "肉食動物は獲物の相対位置などをNNに入力します。移動後に距離1以内の草食動物を捕食し、繁殖には行動数・肉食草食比・周囲の草食数による制限があります。"
-    }
-  ],
-  "special": {
-    "rule|herbivore|MID|MID|MID|MID|MID|MID|MID": "突出した能力に偏らず、地形・消費・移動の各面が中間的な個体です。現在の蓄えは繁殖条件に届いていません。",
-    "rule|carnivore|MID|MID|MID|MID|MID|MID|MID": "突出した能力に偏らず、地形・消費・移動の各面が中間的な個体です。現在の蓄えは繁殖条件に届いていません。",
-    "rule|herbivore|HIGH|HIGH|HIGH|HIGH|HIGH|HIGH|HIGH": "広く移動できる大容量型で、川と山の移動消費も抑えやすい個体です。その一方で維持消費は大きく、温度適性は高温側に寄っています。",
-    "rule|herbivore|LOW|LOW|LOW|LOW|LOW|LOW|LOW": "基本消費を抑える小容量型ですが、移動距離と地形での消費、少ない蓄えが活動の制約になります。温度適性は低温側に寄っています。",
-    "rule|carnivore|HIGH|HIGH|HIGH|HIGH|HIGH|HIGH|HIGH": "広く移動できる大容量型で、川と山の移動消費も抑えやすい個体です。その一方で維持消費は大きく、温度適性は高温側に寄っています。",
-    "rule|carnivore|LOW|LOW|LOW|LOW|LOW|LOW|LOW": "基本消費を抑える小容量型ですが、移動距離と地形での消費、少ない蓄えが活動の制約になります。温度適性は低温側に寄っています。"
-  },
-  "text": {
-    "strength_prefix": "長所",
-    "weakness_prefix": "短所・注意点",
-    "unknown": "未対応のステータスは評価対象に含めていません。"
-  },
-  "context": {
-    "costs": "現在の気温は{temperature:.1f}℃、この遺伝子の適合中心は{ideal:.1f}℃です。現在地での毎ステップの気温消費は{temp_cost:.3f}、基本消費は{base:.3f}、移動は1マスあたり{move:.3f}です。",
-    "fish_positive": "川にいるときは魚を捕る抽選が発生し、川適応が高いほど確率が上がります。川以外ではこの補給はありません。",
-    "fish_zero": "魚による補給確率は0です。川適応が0.8ちょうどでも確率は0で、0.8を超えて初めて川での捕魚抽選が有効になります。",
-    "dead": "この個体は生存していません。表示は残された状態値の説明で、今後の行動を示すものではありません。",
-    "mode_nn": "現在はNN方式です。入力8・隠れ8（tanh）・出力6で、移動・待機・繁殖を確率で選びます。繁殖の重み（hunger_threshold）は未使用です。脳は行動結果の報酬で生涯学習し、学んだ重みも子へ遺伝します。",
-    "mode_rule": "現在はルール方式です。繁殖の重みを含む行動スコアの比較で行動を選びます。NN方式だけの若年繁殖制限・全体の肉食草食比制限は適用されません。",
-    "age": "寿命は行動数{max_age}で、行動数がこれを超えたステップに死亡します。現在の行動数は{age}です。",
-    "nn_age": "NN方式の繁殖は行動数{minimum}以上が必要です。現在値では行動数の条件を{ready}。",
-    "nn_brain": "この個体の脳は合計{count}個の重みを持ち、バイアスはありません。値は0〜1に制限されず、生涯にも更新されるため、能力遺伝子と同じ3段階評価には含めません。",
-    "energy_gate": "現在値では繁殖のエネルギー条件（容量の80%以上）を{ready}。行動前の消費でも値は変わるため、繁殖を保証する表示ではありません。",
-    "nn_density": "現在の生存個体による肉食／草食比は{ratio}です。NN方式では比が{limit}を超えると肉食は繁殖できず、近隣草食数による追加抽選もあります。実際の比の判定にはステップ内の空間索引が使われるため、この表示は参考値です。",
-    "sea": "海には入れません。海へ向かったときは別方向の陸地を探し、全方向が海のときだけ留まります。移動できなかった分の移動エネルギーは消費しません。子の出現先が海なら親の位置へ戻ります。"
-  },
   "modes": {
     "nn": "NN方式",
     "rule": "ルール方式"

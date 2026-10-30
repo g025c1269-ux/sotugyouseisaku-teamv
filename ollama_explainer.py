@@ -17,16 +17,6 @@ from annual_ai_context import build_annual_ai_context, is_rule_recital
 
 CONFIG_PATH = Path(__file__).with_name('data') / 'ollama_config.json'
 MAX_RESPONSE_BYTES = 65536
-SYSTEM_PROMPT = '''あなたは生態系ゲームの明るい案内役「リーフ」です。
-渡された観察データだけを使い、日本語40〜80文字、2〜3文で短く話してください。
-commentというキーだけのJSONを返してください。挨拶、思考過程、見出しは不要です。
-良いところと注意点を伝え、数値の読み上げでなく意味をやさしく説明してください。
-高低の判定・集団との比較はPythonが計算したlevel/comparisonをそのまま使います。
-active=falseの形質を行動の理由にしないでください。温度適性は高いほど寒さに強いわけではありません。
-平均と分布を区別し、平均だけで全員が同じと決めつけないでください。
-個体解説では集団との比較も使ってください。将来の絶滅・繁栄・狩りの成功は断定しません。
-与えられていない能力・地形・個体の行動や過去の変化を作らないでください。
-ゲームの設定変更・コマンド・操作指示は出さず、観察のコメントだけを返してください。'''
 ANNUAL_PROMPT = '''あなたは生態系ゲームの研究員「リーフ」。明るい相棒の口調で、今年の重要な変化を1〜2個選んで考察します。
 「何が起きた？」→「なぜ起きた可能性がある？」→「この先どうなる可能性がある？」に答えてください。
 観測値を先に使い、参考ルールは今回の変化に当てはめます。原因は「〜かも」と仮説にし、繁殖・遺伝・集団構成など別の説明も考えます。未来は条件付きです。
@@ -94,24 +84,19 @@ class OllamaExplainer:
 
     def build_request(self, context):
         cfg = self.settings
-        annual = context.get('target') == 'annual'
-        minimum, maximum = (40, 2000) if annual else (40, 80)
-        if annual:
-            # No explicit system: preserve the model's own SYSTEM/TEMPLATE.
-            # Task/persona/reference in the user message also work without one.
-            data = json.dumps(build_annual_ai_context(context), ensure_ascii=False,
-                              allow_nan=False, separators=(',', ':'))
-            messages = [{'role': 'user', 'content': ANNUAL_PROMPT + ANNUAL_DATA_MARKER + data}]
-        else:
-            messages = [{'role': 'system', 'content': SYSTEM_PROMPT},
-                        {'role': 'user', 'content': json.dumps(context, ensure_ascii=False,
-                                                            allow_nan=False, separators=(',', ':'))}]
+        if context.get('target') != 'annual':
+            raise OllamaError('AI解説は年間総括のみ対応しています。', kind='unsupported_target')
+        minimum, maximum = 40, 2000
+        # No explicit system: preserve the model's own SYSTEM/TEMPLATE.
+        data = json.dumps(build_annual_ai_context(context), ensure_ascii=False,
+                          allow_nan=False, separators=(',', ':'))
+        messages = [{'role': 'user', 'content': ANNUAL_PROMPT + ANNUAL_DATA_MARKER + data}]
         payload = {
             'model': cfg.model, 'think': False, 'stream': False, 'keep_alive': cfg.keep_alive,
             'messages': messages,
             'format': {'type': 'object', 'properties': {'comment': {'type': 'string', 'minLength': minimum, 'maxLength': maximum}},
                        'required': ['comment'], 'additionalProperties': False},
-            'options': {'num_predict': min(512, cfg.num_predict * 2) if annual else cfg.num_predict, 'num_ctx': cfg.num_ctx,
+            'options': {'num_predict': min(512, cfg.num_predict * 2), 'num_ctx': cfg.num_ctx,
                         'num_thread': cfg.num_thread, 'temperature': 0.4},
         }
         return payload
@@ -142,8 +127,7 @@ class OllamaExplainer:
 
     def _generate(self, context):
         cfg = self.settings
-        annual = context.get('target') == 'annual'
-        minimum, maximum = (40, 2000) if annual else (40, 80)
+        minimum, maximum = 40, 2000
         payload = self.build_request(context)
         request = Request(cfg.base_url.rstrip('/') + '/api/chat',
                           data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
@@ -178,12 +162,12 @@ class OllamaExplainer:
             if (not minimum <= len(text) <= maximum or not re.search(r'[ぁ-んァ-ン一-龯]', text)
                     or '<' in text or '>' in text or any(ord(c) < 32 for c in text)):
                 raise ValueError('Invalid comment')
-            if annual and ('草食' not in text or '肉食' not in text):
+            if ('草食' not in text or '肉食' not in text):
                 raise ValueError('Both species must be mentioned')
-            if annual and self._is_instruction_echo(text):
+            if self._is_instruction_echo(text):
                 raise OllamaError('年間データの考察ではなく指示の説明が返ったため、通常解説に切り替えるね。',
                                   raw.decode('utf-8', errors='replace'), kind='instruction_echo')
-            if annual and is_rule_recital(text):
+            if is_rule_recital(text):
                 raise OllamaError('観測結果に触れず仕様説明だけが返ったため、通常解説に切り替えるね。',
                                   raw.decode('utf-8', errors='replace'), kind='rule_recital')
             return text
