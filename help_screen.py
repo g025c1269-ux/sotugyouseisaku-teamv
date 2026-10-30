@@ -7,20 +7,18 @@ from pathlib import Path
 
 import pygame
 
-from title_screen import SIZE, BACKGROUND, TEXT, MUTED, _font
+from title_screen import SIZE, _font
+from theme import color as C
+from skill_art import draw_skill_art
 
 PROJECT_DIR = Path(__file__).resolve().parent
 DATA_PATH = PROJECT_DIR / "data" / "help_text.json"
-ACCENT = (152, 197, 123)
 BODY_SIZES = (22, 20, 18, 16, 14)          # 収まる一番大きい文字サイズを使う
 NO_LINE_START = "。、，．）」』！？!?)"       # 行頭に来ないようにする文字
 
 # ---- スキルカード ----
 COST_LABELS = {1: "軽い", 2: "普通", 3: "重い"}
-COST_COLORS = {1: (140, 210, 130), 2: (240, 205, 90), 3: (238, 120, 105)}
-# 絵がないスキルの代わりの絵の背景色 (スキルのidから決めるので、スキルが増えても色は変わらない)
-PLACEHOLDER_COLORS = [(86, 140, 110), (120, 110, 170), (176, 120, 84), (84, 130, 176), (160, 100, 130), (110, 150, 80)]
-# スキルの絵(skills.json の "image"): 推奨は 4:3 の PNG、480x360 px (背景は透明か、余白を少なめに)。
+# スキルの絵は skill_art.py が描く (assets/skills/<id>.png があればそれ、なければ図形の代わりの絵。推奨は 4:3 の PNG、480x360 px)。
 # カードでは、絵の枠(最大 約152x114 px)に収まるよう、縦横比を保って縮小して出す。
 IMAGE_RATIO = (4, 3)
 CARD_GAP, CARD_MAX_W, CARD_MIN_W = 14, 168, 112    # カードの間隔と、1枚の幅の範囲 (枚数が多いと細くし、それでも収まらなければ横スクロール)
@@ -48,6 +46,7 @@ def load_skills(source=None):
             return [{"id": str(s["id"]), "name": str(s["name"]), "description": str(s["description"]),
                      "cost_level": max(1, min(3, int(s.get("cost_level", 2)))),
                      "needs_target": bool(s.get("needs_target", False)),
+                     "cost": s.get("cost"), "tip": str(s.get("tip", "")),
                      "image": s.get("image") or None} for s in json.load(f)["skills"]]
     except Exception:
         return []
@@ -143,20 +142,16 @@ class HelpScreen:
             self.scroll = 0
             self._layout_body()
 
-    def _image(self, path):
-        if path not in self._images:
-            try:
-                self._images[path] = pygame.image.load(str(PROJECT_DIR / path)).convert_alpha()
-            except Exception:
-                self._images[path] = None                    # 読めなければ、代わりの絵にする
-        return self._images[path]
     # ---------- 本文の折り返し (収まる最大の文字サイズを選ぶ。それでも収まらなければスクロール) ----------
     def _layout_body(self):
         if self._is_cards():
             skills = self._skills()
             self._layout_cards()
             self.card_index = min(self.card_index, max(0, len(skills) - 1))
-            body = skills[self.card_index]["description"] if skills else "スキルのデータを読み込めませんでした。"
+            body = "スキルのデータを読み込めませんでした。"
+            if skills:
+                skill = skills[self.card_index]
+                body = skill["description"] + (f"\n使いどころ: {skill['tip']}" if skill["tip"] else "")
             self.body_rect = self.desc_rect
         else:
             body = self.items[self.selected]["body"]
@@ -218,58 +213,58 @@ class HelpScreen:
         return None
 
     # ---------- 描画 ----------
-    def _text(self, text, size, center=None, topleft=None, color=TEXT):
-        surface = self.fonts[size].render(text, True, color)
+    def _text(self, text, size, center=None, topleft=None, color=None):
+        surface = self.fonts[size].render(text, True, C("text") if color is None else color)
         rect = surface.get_rect(center=center) if center is not None else surface.get_rect(topleft=topleft)
         self.screen.blit(surface, rect)
 
     def _background(self):
-        self.screen.fill(BACKGROUND)
+        self.screen.fill(C("bg"))
         for x in range(25, 1000, 55):
             for y in range(25, 600, 55):
-                pygame.draw.circle(self.screen, (19, 38, 29), (x, y), 1)
+                pygame.draw.circle(self.screen, C("dot"), (x, y), 1)
         for side in (0, 1):
             for i in range(7):
                 x = 50 + i * 24 if side == 0 else 950 - i * 24
                 y = 595 - i * 33
-                pygame.draw.line(self.screen, (34, 69, 44), (x, 600), (x, y - 32), 2)
-                pygame.draw.ellipse(self.screen, (25, 57, 36), (x - 24, y - 30, 24, 12))
-                pygame.draw.ellipse(self.screen, (35, 73, 44), (x, y - 48, 27, 13))
+                pygame.draw.line(self.screen, C("deco_stem"), (x, 600), (x, y - 32), 2)
+                pygame.draw.ellipse(self.screen, C("deco_a"), (x - 24, y - 30, 24, 12))
+                pygame.draw.ellipse(self.screen, C("deco_b"), (x, y - 48, 27, 13))
 
     def draw(self):
         self._background()
         self._text(self.heading, 28, center=(500, 50))
-        self._text("知りたい項目を選んでください", 14, center=(500, 80), color=MUTED)
+        self._text("知りたい項目を選んでください", 14, center=(500, 80), color=C("muted"))
         for i, (item, rect) in enumerate(zip(self.items, self.item_rects)):
             selected = i == self.selected
             hovered = (not self.keyboard) and rect.collidepoint(self.mouse)
-            pygame.draw.rect(self.screen, (51, 96, 56) if selected or hovered else (22, 49, 33), rect, border_radius=9)
-            pygame.draw.rect(self.screen, ACCENT if selected else (56, 86, 60), rect, 2 if selected else 1, border_radius=9)
+            pygame.draw.rect(self.screen, C("button_hover") if selected or hovered else C("button"), rect, border_radius=9)
+            pygame.draw.rect(self.screen, C("accent") if selected else C("button_edge"), rect, 2 if selected else 1, border_radius=9)
             self._text(item["title"], 20, center=rect.center)
         hovered = (not self.keyboard) and self.back_rect.collidepoint(self.mouse)
-        pygame.draw.rect(self.screen, (51, 96, 56) if hovered else (22, 49, 33), self.back_rect, border_radius=9)
-        pygame.draw.rect(self.screen, (56, 86, 60), self.back_rect, 1, border_radius=9)
+        pygame.draw.rect(self.screen, C("button_hover") if hovered else C("button"), self.back_rect, border_radius=9)
+        pygame.draw.rect(self.screen, C("button_edge"), self.back_rect, 1, border_radius=9)
         self._text("戻る", 22, center=self.back_rect.center)
 
-        pygame.draw.rect(self.screen, (16, 36, 27), self.panel, border_radius=14)
-        pygame.draw.rect(self.screen, (44, 76, 52), self.panel, 1, border_radius=14)
-        self._text(self.items[self.selected]["title"], 28, topleft=(self.panel.x + 30, self.panel.y + 24), color=(163, 204, 131))
+        pygame.draw.rect(self.screen, C("surface"), self.panel, border_radius=14)
+        pygame.draw.rect(self.screen, C("surface_edge"), self.panel, 1, border_radius=14)
+        self._text(self.items[self.selected]["title"], 28, topleft=(self.panel.x + 30, self.panel.y + 24), color=C("accent_bright"))
         if self._is_cards():
-            self._text(self.items[self.selected]["body"], 14, topleft=(self.panel.x + 30, self.panel.y + 60), color=MUTED)
+            self._text(self.items[self.selected]["body"], 14, topleft=(self.panel.x + 30, self.panel.y + 60), color=C("muted"))
             self._draw_cards()
         old_clip = self.screen.get_clip()
         self.screen.set_clip(self.body_rect)
         y = self.body_rect.y - self.scroll
         for line in self.body_lines:
             if y + self.line_h >= self.body_rect.y and y <= self.body_rect.bottom:
-                surf = self.body_font.render(line, True, TEXT)
+                surf = self.body_font.render(line, True, C("text"))
                 self.screen.blit(surf, (self.body_rect.x, y))
             y += self.line_h
         self.screen.set_clip(old_clip)
         if self.max_scroll > 0:
             self._text("ホイール / PageUp・PageDown でスクロール", 14,
-                       center=(self.panel.centerx, self.panel.bottom - 12), color=MUTED)
-        self._text("↑↓:項目 / ←→:カード / Esc:戻る" if self._is_cards() else "↑↓:項目 / Esc:戻る", 14, center=(500, 580), color=MUTED)
+                       center=(self.panel.centerx, self.panel.bottom - 12), color=C("muted"))
+        self._text("↑↓:項目 / ←→:カード / Esc:戻る" if self._is_cards() else "↑↓:項目 / Esc:戻る", 14, center=(500, 580), color=C("muted"))
 
     def _draw_cards(self):
         skills = self._skills()
@@ -281,38 +276,27 @@ class HelpScreen:
                 continue
             selected = i == self.card_index
             hovered = (not self.keyboard) and rect.collidepoint(self.mouse) and self.card_area.collidepoint(self.mouse)
-            pygame.draw.rect(self.screen, (51, 96, 56) if selected else ((38, 78, 48) if hovered else (24, 52, 36)), rect, border_radius=12)
-            pygame.draw.rect(self.screen, ACCENT if selected else (56, 86, 60), rect, 3 if selected else 1, border_radius=12)
-            # 絵の枠 (image があれば絵、なければスキルごとの色の背景に頭文字)
+            pygame.draw.rect(self.screen, C("button_hover") if selected else (C("card_hover") if hovered else C("card_idle")), rect, border_radius=12)
+            pygame.draw.rect(self.screen, C("accent") if selected else C("button_edge"), rect, 3 if selected else 1, border_radius=12)
+            # 絵の枠 (assets/skills/<id>.png があれば絵、なければ図形の代わりの絵。ゲーム内のカードと同じ関数で描く)
             box = pygame.Rect(rect.x + 8, rect.y + 8, rect.width - 16, (rect.width - 16) * IMAGE_RATIO[1] // IMAGE_RATIO[0])
-            image = self._image(skill["image"]) if skill["image"] else None
-            if image is not None:
-                scale = min(box.width / image.get_width(), box.height / image.get_height())
-                size = (max(1, int(image.get_width() * scale)), max(1, int(image.get_height() * scale)))
-                picture = pygame.transform.smoothscale(image, size)
-                pygame.draw.rect(self.screen, (14, 30, 22), box, border_radius=8)
-                self.screen.blit(picture, picture.get_rect(center=box.center))
-            else:
-                color = PLACEHOLDER_COLORS[sum(ord(c) for c in skill["id"]) % len(PLACEHOLDER_COLORS)]
-                pygame.draw.rect(self.screen, color, box, border_radius=8)
-                initial = self.fonts[56].render(skill["name"][:1], True, (250, 250, 240))
-                self.screen.blit(initial, initial.get_rect(center=box.center))
-            pygame.draw.rect(self.screen, (10, 24, 17), box, 1, border_radius=8)
+            draw_skill_art(self.screen, box, skill["id"])
             y = box.bottom + 6
             for line in wrap_text(skill["name"], self.fonts[18], rect.width - 16)[:2]:
                 self._text(line, 18, center=(rect.centerx, y + 11))
                 y += 22
             y = box.bottom + 6 + 22 * self.card_name_rows + 4
             level = skill["cost_level"]
-            self._text(f"コスト: {COST_LABELS[level]}", 14, center=(rect.centerx, y + 10), color=COST_COLORS[level])
+            mp = f"（MP {skill['cost']}）" if skill["cost"] is not None else ""
+            self._text(f"コスト: {COST_LABELS[level]}{mp}", 14, center=(rect.centerx, y + 10), color=C(f"cost_{level}"))
             tag = pygame.Rect(0, 0, rect.width - 24, 22)
             tag.midbottom = (rect.centerx, rect.bottom - 8)
-            pygame.draw.rect(self.screen, (52, 86, 128) if skill["needs_target"] else (108, 88, 48), tag, border_radius=11)
-            self._text("場所を選ぶ" if skill["needs_target"] else "すぐ使う", 14, center=tag.center)
+            pygame.draw.rect(self.screen, C("tag_target") if skill["needs_target"] else C("tag_instant"), tag, border_radius=11)
+            self._text("場所を選ぶ" if skill["needs_target"] else "すぐ使う", 14, center=tag.center, color=C("tag_text"))
         self.screen.set_clip(old_clip)
         if self.card_max_scroll > 0:
             self._text("◀ ホイール / ←→ で横にスクロール ▶", 14,
-                       center=(self.card_area.centerx, self.card_area.bottom + 6), color=MUTED)
+                       center=(self.card_area.centerx, self.card_area.bottom + 6), color=C("muted"))
 
 
 def show_help_screen(path=DATA_PATH, heading="解説"):

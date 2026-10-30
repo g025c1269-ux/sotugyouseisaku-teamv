@@ -240,12 +240,15 @@ def _draw_legend(screen, pygame, small_font, x, y, renderer):
 # --------------------------------------------------
 # 左上: FPS・ズーム倍率・操作ヒント (重くなったときの切り分け用にFPSを常時表示)
 # --------------------------------------------------
-def _draw_view_hud(screen, pygame, small_font, renderer, clock, follow, explain_open=False):
-    text = (f"FPS {clock.get_fps():.0f} | x{renderer.zoom // CELL} | "
-            f"ホイール:ズーム ドラッグ:移動 F:追跡{'中' if follow else ''} | "
-            f"V:食料{'表示' if renderer.show_food else '非表示'} | "
-            + (f"E:エフェクト{'ON' if renderer.show_season_fx else 'OFF'} | " if config.SEASONS_ENABLED else "")
-            + f"N:解説{'ON' if explain_open else 'OFF'} | F5:セーブ")
+def _draw_view_hud(screen, pygame, small_font, renderer, clock, follow, explain_open=False, game_mode=False):
+    parts = [f"FPS {clock.get_fps():.0f}", f"x{renderer.zoom // CELL}",
+             f"ホイール:ズーム ドラッグ:移動 F:追跡{'中' if follow else ''}",
+             f"V:食料{'表示' if renderer.show_food else '非表示'}"]
+    if config.SEASONS_ENABLED:
+        parts.append(f"E:エフェクト{'ON' if renderer.show_season_fx else 'OFF'}")
+    if not game_mode:
+        parts += [f"N:解説{'ON' if explain_open else 'OFF'}", "F5:セーブ"]
+    text = " | ".join(parts)         # 区切りの「|」は、項目の間だけ (ゲームモードで末尾に余らない)
     surf = small_font.render(text, True, (255, 255, 255))
     shade = pygame.Surface((surf.get_width() + 8, surf.get_height() + 4), pygame.SRCALPHA)
     shade.fill((0, 0, 0, 150))
@@ -257,7 +260,14 @@ def _draw_view_hud(screen, pygame, small_font, renderer, clock, follow, explain_
 # 右側: 速度ボタン (低速/中速/高速の3つを横並び。選択中は青く強調)
 # 戻り値: (次の描画y座標, {速度名: クリック判定用Rect})
 # --------------------------------------------------
-def _draw_speed_buttons(screen, pygame, small_font, x, y, width, speed_level):
+def _draw_speed_buttons(screen, pygame, small_font, x, y, width, speed_level, themed=False):
+    if themed:        # ゲームモード: 色は theme から読む (観察モードは今までの色)
+        from theme import color as C
+        on_fill, on_edge, on_text = C("gp_speed_on"), C("gp_speed_on_edge"), C("gp_speed_on_text")
+        off_fill, off_edge, off_text, info_color = C("gp_button"), C("gp_button_edge"), C("gp_dim"), C("gp_info")
+    else:
+        on_fill, on_edge, on_text = (33, 150, 243), (100, 181, 246), (255, 255, 255)
+        off_fill, off_edge, off_text, info_color = (50, 55, 62), (90, 95, 100), (170, 170, 170), (140, 140, 140)
     gap = 8
     btn_w = (width - gap * (len(SPEED_LEVELS) - 1)) // len(SPEED_LEVELS)
     btn_h = small_font.get_height() + 6
@@ -266,13 +276,13 @@ def _draw_speed_buttons(screen, pygame, small_font, x, y, width, speed_level):
         rect = pygame.Rect(x + i * (btn_w + gap), y, btn_w, btn_h)
         rects[key] = rect
         selected = key == speed_level
-        pygame.draw.rect(screen, (33, 150, 243) if selected else (50, 55, 62), rect, border_radius=4)
-        pygame.draw.rect(screen, (100, 181, 246) if selected else (90, 95, 100), rect, 1, border_radius=4)
-        text = small_font.render(label, True, (255, 255, 255) if selected else (170, 170, 170))
+        pygame.draw.rect(screen, on_fill if selected else off_fill, rect, border_radius=4)
+        pygame.draw.rect(screen, on_edge if selected else off_edge, rect, 1, border_radius=4)
+        text = small_font.render(label, True, on_text if selected else off_text)
         screen.blit(text, text.get_rect(center=rect.center))
 
     y += btn_h + 3
-    speed_info = small_font.render(f"({SPEED_SPS[speed_level]:.1f} ステップ/秒)", True, (140, 140, 140))
+    speed_info = small_font.render(f"({SPEED_SPS[speed_level]:.1f} ステップ/秒)", True, info_color)
     screen.blit(speed_info, (x, y))
     y += speed_info.get_height() + 4
     return y, rects
@@ -423,15 +433,16 @@ def _confirm_rects():
     return dlg, yes, no
 
 
-def _draw_confirm_dialog(screen, pygame, font, big_font):
+def _draw_confirm_dialog(screen, pygame, font, big_font, stage_mode=False):
     shade = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
     shade.fill((0, 0, 0, 150))
     screen.blit(shade, (0, 0))
     dlg, yes, no = _confirm_rects()
     pygame.draw.rect(screen, (22, 27, 34), dlg, border_radius=10)
     pygame.draw.rect(screen, (100, 181, 246), dlg, 2, border_radius=10)
-    for text, f, color, y in (("メニューに戻りますか？", big_font, (255, 255, 255), dlg.y + 24),
-                              ("セーブしていない進行は失われます", font, (255, 213, 79), dlg.y + 62)):
+    title, note = ("ステージ選択に戻りますか？", "今の進行は失われます") if stage_mode else                   ("メニューに戻りますか？", "セーブしていない進行は失われます")
+    for text, f, color, y in ((title, big_font, (255, 255, 255), dlg.y + 24),
+                              (note, font, (255, 213, 79), dlg.y + 62)):
         surf = f.render(text, True, color)
         screen.blit(surf, surf.get_rect(midtop=(dlg.centerx, y)))
     for rect, label, fill in ((yes, "はい", (183, 28, 28)), (no, "いいえ", (33, 150, 243))):
@@ -444,7 +455,7 @@ def _draw_confirm_dialog(screen, pygame, font, big_font):
 # 1ステップ進め、世代境界なら記録して世代を進める
 # 戻り値: (step_in_gen, extinct, done)
 # --------------------------------------------------
-def _step_simulation(world, step_in_gen, extinct, done):
+def _step_simulation(world, step_in_gen, extinct, done, last_generation=None):
     world.step()
     step_in_gen += 1
     if len(world.organisms) == 0:
@@ -453,7 +464,7 @@ def _step_simulation(world, step_in_gen, extinct, done):
     if step_in_gen >= config.MAX_STEPS_PER_GEN or extinct:
         world._record_data()
         step_in_gen = 0
-        if extinct or world.generation >= config.MAX_GENERATIONS:
+        if extinct or world.generation >= (last_generation or config.MAX_GENERATIONS):
             done = True
         else:
             world.generation += 1
@@ -461,13 +472,33 @@ def _step_simulation(world, step_in_gen, extinct, done):
     return step_in_gen, extinct, done
 
 
+# --------------------------------------------------
+# ゲームモードの判定: 草食か肉食のどちらかが絶滅したら失敗 / clear_generations 世代を両方生き残って終えたらクリア
+# 戻り値: 決着がついたら結果の辞書、まだなら None。gen は判定する世代 (失敗は、絶滅した世代)
+# --------------------------------------------------
+def _stage_outcome(world, done, gen):
+    herbs = sum(1 for o in world.organisms if o.org_type == "herbivore")
+    carns = sum(1 for o in world.organisms if o.org_type == "carnivore")
+    extinct = [name for name, n in (("herbivore", herbs), ("carnivore", carns)) if n == 0]
+    if extinct:
+        outcome = "fail"
+    elif done:
+        outcome = "clear"
+    else:
+        return None
+    return {"outcome": outcome, "extinct": extinct, "generation": gen, "herbivores": herbs, "carnivores": carns}
+
+
 # =============================================
 # リアルタイム可視化モード (pygame)
 # =============================================
-def run_with_visualization(world, resume=None, explanation_mode="rule"):
+def run_with_visualization(world, resume=None, stage=None, explanation_mode="rule"):
     """resume: セーブからの再開用の辞書 (step_in_gen / extinct / done)。Noneなら新規に1世代目から始める。
-    explanation_mode: "rule"(通常) または "ai"。生態系の設定には影響しない。
-    戻り値: メニューボタンで戻ったときは "menu"、それ以外はNone。"""
+    stage: ゲームモードのステージ (data/stages.json の1件)。Noneなら観察モード。
+    explanation_mode: "rule"(通常) または "ai"。観察モードの解説だけに使う (ゲームモードでは使わない)。生態系の設定には影響しない。
+    戻り値: 観察モードは、メニューボタンで戻ったとき "menu"、それ以外はNone。
+    ゲームモードは、決着がついたとき結果の辞書 (_stage_outcome)、メニューボタンで戻ったとき "menu"、閉じたとき "quit"。
+    ゲームモードでは pygame を終了しない (呼び出し元が続けて画面を出す)。"""
     import pygame
     import save_load
     from navigator_panel import NavigatorPanel
@@ -479,7 +510,7 @@ def run_with_visualization(world, resume=None, explanation_mode="rule"):
     font, big_font, small_font = _load_fonts(pygame)
     renderer = PixelRenderer(pygame, world, small_font)
     status_panel = NavigatorPanel((GRID_PANEL_SIZE, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT),
-                                  ai_enabled=explanation_mode == "ai")
+                                  ai_enabled=stage is None and explanation_mode == "ai")
 
     if resume is None:
         world.generation += 1  # 1世代目を開始
@@ -501,12 +532,59 @@ def run_with_visualization(world, resume=None, explanation_mode="rule"):
     accumulator = 0.0
     selected_org = None
     speed_button_rects = {}
+    game = game_panel = None
+    skill_sel = None        # ゲームモード: 場所(や種)を選んでいるスキル {"id", "species"}
+    paused_before = False   # スキルを選ぶ前の一時停止の状態 (取り消し・発動のあとに戻す)
+    clear_generations = int(stage["clear_generations"]) if stage and stage.get("clear_generations") else None
+    stage_result = None     # ゲームモード: 決着がついたときの結果
+    if stage is not None:   # ゲームモード専用の右パネル (観察モードの右パネルは使わない)
+        from skills import GameState, apply_skill
+        from game_panel import GamePanel, load_hints
+        game = GameState()
+        game_panel = GamePanel(
+            pygame.Rect(GRID_PANEL_SIZE, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT), game.skills, game.rules, load_hints(),
+            (font, big_font, small_font), status_panel,
+            lambda x, y, w: _draw_speed_buttons(screen, pygame, small_font, x, y, w, speed_level, themed=True))
+        menu_rect = game_panel.menu_rect
+
+    def finish_skill():
+        nonlocal skill_sel, paused
+        skill_sel, paused = None, paused_before
+
+    def pick_skill(skill):
+        """スキルのカード/キーを選んだとき。場所を選ぶスキルは一時停止して待つ。場所の要らないスキルはすぐ使う。"""
+        nonlocal skill_sel, paused, paused_before, toast
+        if skill_sel is not None and skill_sel["id"] == skill["id"]:
+            finish_skill()                                   # 同じカードをもう一度 → 取り消し
+        elif not game.can_use(skill):
+            toast = (f"MPが足りません (必要 {skill['cost']})", pygame.time.get_ticks() + 1500)
+        elif skill["needs_target"]:
+            if skill_sel is None:
+                paused_before = paused
+            skill_sel = {"id": skill["id"], "species": skill_sel["species"] if skill_sel else "herbivore"}
+            paused = True
+        else:
+            use_skill(skill, None)
+
+    def use_skill(skill, cell):
+        nonlocal toast
+        effect = apply_skill(world, skill, cell, skill_sel["species"] if skill_sel else None)
+        if effect is None:
+            toast = ("そこには使えません", pygame.time.get_ticks() + 1500)     # MPは減らさない (選んだままにする)
+            return
+        game.spend(skill)
+        if skill_sel is not None:
+            finish_skill()
+        msg = {"food": f"食料を {effect.get('count')} 個出しました", "spawn": f"{effect.get('count')} 匹を補充しました",
+               "adapt": f"順応: 平均の適正気温 {effect.get('before', 0) * 40:.1f} → {effect.get('after', 0) * 40:.1f}°C"}[skill["id"]]
+        toast = (msg, pygame.time.get_ticks() + 2000)
 
     # 世代の境界(その世代が始まる直前)の状態を世代番号ごとに保存しておく
     # (1世代ごとモードの←→で、同じ世代には常に同じ状態で戻れるようにするため)
     gen_snapshots = {world.generation: (copy.deepcopy(world), extinct, done)}
 
     while running:
+        gen_before = world.generation    # ゲームモードの失敗の判定で、絶滅した世代として使う
         for event in pygame.event.get():
             if confirm_menu:                         # 確認ダイアログ中は、はい/いいえ/Esc/閉じるだけ受け付ける
                 _, yes_rect, no_rect = _confirm_rects()
@@ -520,16 +598,27 @@ def run_with_visualization(world, resume=None, explanation_mode="rule"):
                     elif no_rect.collidepoint(event.pos):
                         confirm_menu = False
                 continue
-            if status_panel.handle_event(event, selected_org, world):
+            if stage is None and status_panel.handle_event(event, selected_org, world):
                 continue
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
-                    paused = not paused
+                    if skill_sel is None:
+                        paused = not paused
                 elif event.key == pygame.K_ESCAPE:
-                    running = False
-                elif event.key == pygame.K_F5:
+                    if stage is None:
+                        running = False
+                    elif skill_sel is not None:              # スキルの選択を取り消す (MPは減らない)
+                        finish_skill()
+                    else:                                    # ゲームモード: 「ステージ選択に戻りますか？」の確認を出す
+                        confirm_menu = True
+                elif stage is not None and event.key == pygame.K_TAB:
+                    if skill_sel is not None and skill_sel["id"] == "spawn":      # 補充する種を切り替える
+                        skill_sel["species"] = "carnivore" if skill_sel["species"] == "herbivore" else "herbivore"
+                elif stage is not None and event.key in [pygame.key.key_code(sk["key"].lower()) for sk in game.skills]:
+                    pick_skill(next(sk for sk in game.skills if pygame.key.key_code(sk["key"].lower()) == event.key))
+                elif event.key == pygame.K_F5 and stage is None:
                     try:
                         save_load.save_game(world, step_in_gen, extinct, done)
                         toast = (f"セーブしました ({world.generation}世代目)", pygame.time.get_ticks() + 2000)
@@ -543,7 +632,7 @@ def run_with_visualization(world, resume=None, explanation_mode="rule"):
                     renderer.show_season_fx = not renderer.show_season_fx
                 elif event.key == pygame.K_f:
                     follow = not follow and selected_org is not None
-                elif event.key == pygame.K_m:
+                elif event.key == pygame.K_m and stage is None:      # 1世代ごとモードは観察モードだけ (ゲームモードは通常のまま)
                     mode = "per_gen" if mode == "normal" else "normal"
                     if mode == "per_gen":
                         paused = True
@@ -556,7 +645,12 @@ def run_with_visualization(world, resume=None, explanation_mode="rule"):
                             extinct, done = ex2, dn2
                         else:
                             while True:
-                                step_in_gen, extinct, done = status_panel.advance(world, _step_simulation, step_in_gen, extinct, done)
+                                if game is not None:
+                                    game.tick()
+                                if stage is None:
+                                    step_in_gen, extinct, done = status_panel.advance(world, _step_simulation, step_in_gen, extinct, done)
+                                else:
+                                    step_in_gen, extinct, done = _step_simulation(world, step_in_gen, extinct, done, clear_generations)
                                 if step_in_gen == 0:
                                     break
                             if world.generation not in gen_snapshots:
@@ -580,9 +674,13 @@ def run_with_visualization(world, resume=None, explanation_mode="rule"):
                         follow = False
                     else:                                    # 盤面: クリックなら選択 / 動かしたら移動
                         drag_start, drag_last, drag_moved = (mx, my), (mx, my), False
-                elif not status_panel.open and status_panel.close_rect.collidepoint(mx, my):
+                elif stage is None and not status_panel.open and status_panel.close_rect.collidepoint(mx, my):
                     status_panel.open = True                 # 右パネル右上の「解説」ボタン → 解説パネルを開く
-                elif not status_panel.open and menu_rect.collidepoint(mx, my):
+                elif stage is not None and any(r.collidepoint(mx, my) for r in game_panel.card_rects.values()):
+                    pick_skill(next(sk for sk in game.skills if game_panel.card_rects[sk["id"]].collidepoint(mx, my)))
+                elif stage is not None and skill_sel is not None and skill_sel["id"] == "spawn" and                         any(r.collidepoint(mx, my) for r in game_panel.species_rects.values()):
+                    skill_sel["species"] = next(k for k, r in game_panel.species_rects.items() if r.collidepoint(mx, my))
+                elif (stage is not None or not status_panel.open) and menu_rect.collidepoint(mx, my):
                     confirm_menu = True                      # 「メニュー」ボタン → 確認ダイアログ
                 else:                                        # 右パネル: 速度ボタン
                     for key, rect in speed_button_rects.items():
@@ -598,7 +696,12 @@ def run_with_visualization(world, resume=None, explanation_mode="rule"):
                         follow = False
                     drag_last = (mx, my)
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                if drag_start is not None and not drag_moved:
+                if drag_start is not None and not drag_moved and skill_sel is not None:
+                    # スキルの場所を決める (盤面の座標 → マス。画面の横が列(y)、縦が行(x))
+                    cell = ((event.pos[1] + renderer.off_y) // renderer.zoom, (event.pos[0] + renderer.off_x) // renderer.zoom)
+                    if 0 <= cell[0] < config.GRID_SIZE and 0 <= cell[1] < config.GRID_SIZE:
+                        use_skill(next(sk for sk in game.skills if sk["id"] == skill_sel["id"]), cell)
+                elif drag_start is not None and not drag_moved:
                     selected_org = renderer.find_org(world, drag_start[0], drag_start[1])
                     if selected_org is None:
                         follow = False
@@ -608,6 +711,8 @@ def run_with_visualization(world, resume=None, explanation_mode="rule"):
                 if mx < GRID_PANEL_SIZE and event.y != 0:
                     renderer.zoom_step(1 if event.y > 0 else -1, (mx, my))
 
+        if stage is not None and stage_result is None:      # ←→(1世代ごとモード)で進めた分の判定
+            stage_result = _stage_outcome(world, done, gen_before)
         world.update_temperature()  # 世代に応じた季節の気温に更新 (←→で世代を戻した場合も追従)
 
         # WASDでカメラ移動 / 追跡モード中は選択個体を画面中央に保つ
@@ -620,14 +725,23 @@ def run_with_visualization(world, resume=None, explanation_mode="rule"):
         if follow and selected_org is not None and selected_org.alive and selected_org in world.organisms:
             renderer.center_on_org(selected_org)
 
-        if running and not paused and not done and not confirm_menu:
+        if running and not paused and not done and not confirm_menu and stage_result is None:
             accumulator += clock.get_time() / 1000.0
             sps = SPEED_SPS[speed_level]
             steps_to_run = min(int(accumulator * sps), MAX_STEPS_PER_FRAME)
             if steps_to_run > 0:
                 accumulator -= steps_to_run / sps
                 for _ in range(steps_to_run):
-                    step_in_gen, extinct, done = status_panel.advance(world, _step_simulation, step_in_gen, extinct, done)
+                    gen_before = world.generation
+                    if stage is None:
+                        step_in_gen, extinct, done = status_panel.advance(world, _step_simulation, step_in_gen, extinct, done)
+                    else:
+                        step_in_gen, extinct, done = _step_simulation(world, step_in_gen, extinct, done, clear_generations)
+                    if stage is not None:
+                        game.tick()               # 進んだステップ分だけMPが回復する (一時停止中はここに来ない)
+                        stage_result = _stage_outcome(world, done, gen_before)
+                        if stage_result:
+                            break
                     if step_in_gen == 0:
                         if world.generation not in gen_snapshots:
                             gen_snapshots[world.generation] = (copy.deepcopy(world), extinct, done)
@@ -638,11 +752,22 @@ def run_with_visualization(world, resume=None, explanation_mode="rule"):
 
         screen.fill(BG_COLOR)
         renderer.draw(screen, world, selected_org)
-        _draw_view_hud(screen, pygame, small_font, renderer, clock, follow, status_panel.open)
-        speed_button_rects = _draw_info_panel(
-            screen, pygame, font, big_font, small_font, world, paused, mode, speed_level, selected_org, renderer,
-            explain_rect=status_panel.close_rect, menu_rect=menu_rect
-        )
+        _draw_view_hud(screen, pygame, small_font, renderer, clock, follow, status_panel.open, game_mode=stage is not None)
+        if stage is None:
+            speed_button_rects = _draw_info_panel(
+                screen, pygame, font, big_font, small_font, world, paused, mode, speed_level, selected_org, renderer,
+                explain_rect=status_panel.close_rect, menu_rect=menu_rect
+            )
+        else:
+            game_panel.draw(screen, world, stage, game, clear_generations, paused, speed_level,
+                            skill_sel, skill_sel["species"] if skill_sel else None)
+            speed_button_rects = game_panel.speed_rects
+            if skill_sel is not None:                        # 盤面に、スキルが届く範囲を円で出す
+                mx, my = pygame.mouse.get_pos()
+                if mx < GRID_PANEL_SIZE:
+                    radius = next(sk for sk in game.skills if sk["id"] == skill_sel["id"])["params"].get("radius")
+                    if radius:
+                        pygame.draw.circle(screen, (255, 235, 130), (mx, my), int(radius * renderer.zoom), 2)
 
         if extinct:
             msg = big_font.render(">>> 全種絶滅 <<<", True, (255, 102, 102))
@@ -655,9 +780,10 @@ def run_with_visualization(world, resume=None, explanation_mode="rule"):
             pygame.draw.rect(screen, (0, 0, 0), rect.inflate(20, 16))
             screen.blit(msg, rect)
 
-        status_panel.draw(screen, selected_org, world)
+        if stage is None:
+            status_panel.draw(screen, selected_org, world)
         if confirm_menu:
-            _draw_confirm_dialog(screen, pygame, font, big_font)
+            _draw_confirm_dialog(screen, pygame, font, big_font, stage_mode=stage is not None)
         if toast is not None:
             if pygame.time.get_ticks() < toast[1]:
                 msg = font.render(toast[0], True, (255, 255, 255))
@@ -669,11 +795,16 @@ def run_with_visualization(world, resume=None, explanation_mode="rule"):
         pygame.display.flip()
         clock.tick(60)
 
-        if done and running and mode == "normal":
+        if stage_result is not None and running:     # ゲームモード: 最後の画面を少し見せてから結果画面へ
+            pygame.time.delay(1000)
+            running = False
+        elif stage is None and done and running and mode == "normal":
             pygame.time.delay(1500)
             running = False
 
     status_panel.close()
+    if stage is not None:      # ゲームモードは pygame を終了しない (結果画面・ステージ選択画面が続けて使う)
+        return stage_result or ("menu" if back_to_menu else "quit")
     pygame.quit()
     if back_to_menu:
         return "menu"      # 進行は破棄してタイトル画面へ (結果グラフも保存しない)
@@ -774,6 +905,8 @@ def save_result_graph(world):
 # =============================================
 if __name__ == "__main__":
     if config.VISUALIZE:
+        import theme
+        theme.load_settings()                         # 保存してある配色を読む (なければ既定の草原)
         from title_screen import show_title_screen
         from settings_screen import show_settings_screen, apply_settings
         import save_load

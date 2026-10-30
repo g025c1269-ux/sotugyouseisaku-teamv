@@ -1,20 +1,26 @@
 """ゲームモードのステージ選択画面 (形だけ。ステージの中身はまだない)。
 
 ステージの定義は data/stages.json (id / name / description のリスト) にある。
+カードには「ステージN」(stages.json の並び順で自動) と説明とイラストを出す。ステージ名 (name) はデータに残すが、この画面には出さない。
+イラスト: assets/stages/<id>.png があれば、カード上部の絵の枠 (400x100 px) に、縦横比を保って収めて出す。
+  推奨サイズは 800x200 px (4:1 の PNG。枠の2倍で、縮小しても綺麗に見える。小さくても 400x100 px 以上)。背景は不透明でも透明でもよい。
+  なければ、ステージごとの色の背景にステージ番号を大きく出した代わりの絵を出す。
 ステージを増やすには、JSONに1件足し、中身ができたら STAGE_HANDLERS[id] に開始用の関数を登録する
 (登録がないステージは「準備中」と表示して、選択画面に戻る)。
+"playable": true のステージは、決定すると play_stage で遊べる (ステージ選択から結果画面まで)。
 """
 import json
 from pathlib import Path
 
 import pygame
 
-from title_screen import SIZE, BACKGROUND, TEXT, MUTED, _font
+from title_screen import SIZE, _font
+from theme import color as C
 from help_screen import wrap_text
 
 DATA_PATH = Path(__file__).resolve().parent / "data" / "stages.json"
 GAME_HELP_PATH = Path(__file__).resolve().parent / "data" / "game_help_text.json"
-ACCENT = (152, 197, 123)
+STAGE_IMAGE_DIR = Path(__file__).resolve().parent / "assets" / "stages"
 NOTICE_MS = 1500
 # 横スクロール(カルーセル)の見た目: 中央のカードを大きく、左右の隣のカードを小さく少しだけ見せる
 SLIDE_MS = 260                       # 切り替えのスライドにかける時間
@@ -22,16 +28,46 @@ CARD_SIZE = (420, 240)               # 中央のカードの大きさ
 CARD_CENTER = (500, 290)
 CARD_SPACING = 340                   # カードの中心どうしの間隔 (px。ステージが増えても同じ間隔で横に並ぶ)
 SIDE_SCALE = 0.62                    # 隣のカードの縮小率
+ART_BOX = pygame.Rect(10, 10, 400, 100)      # カード上部のイラストの枠 (カード内の位置)
+DESC_TOP, DESC_HEIGHT = 150, 80              # 説明文を入れる範囲 (カード内のy、高さ)。収まる一番大きい文字サイズを使う
+DESC_SIZES = (18, 16, 14)
 
 # ステージの中身ができたら、ここに {ステージのid: 開始用の関数} を登録する。
 # 関数は引数なしで呼ばれ、"back" か "quit" を返す (戻ったらステージ選択画面に戻る)。
 STAGE_HANDLERS = {}
 
 
+def play_stage(stage):
+    """ステージを遊ぶ (世界を作る → シミュレーション画面 → 結果画面。「もう一度」なら作り直して繰り返す)。
+    ウィンドウが閉じられたら "quit"、ステージ選択に戻るときは None を返す。抜けるときは必ず config を元に戻す。"""
+    import stage_setup
+    from main import run_with_visualization
+    from result_screen import show_result_screen
+    try:
+        while True:
+            world = stage_setup.build_world(stage)
+            result = run_with_visualization(world, stage=stage)
+            if result == "quit":
+                return "quit"
+            if result == "menu":
+                return None
+            choice = show_result_screen(result)
+            if choice == "quit":
+                return "quit"
+            if choice == "back":
+                return None
+            stage_setup.restore()                # 「もう一度」: 設定を戻してから、世界を作り直す
+    finally:
+        stage_setup.restore()
+        pygame.display.set_mode(SIZE)            # 遊ぶ画面は大きさが違うので、ステージ選択の大きさに戻す
+        pygame.display.set_caption("ECOSYSTEM — 生態系シミュレーションゲーム")
+
+
 def load_stages(path=DATA_PATH):
     try:
         with open(path, encoding="utf-8") as f:
-            stages = [{"id": str(s["id"]), "name": str(s["name"]), "description": str(s["description"])}
+            # 名前・説明のほか、初期設定(initial_* / food_mult など)もそのまま持たせる (stage_setup.build_world が読む)
+            stages = [{**s, "id": str(s["id"]), "name": str(s["name"]), "description": str(s["description"])}
                       for s in json.load(f)["stages"]]
         if stages:
             return stages
@@ -43,7 +79,7 @@ def load_stages(path=DATA_PATH):
 class StageSelect:
     def __init__(self):
         self.screen = pygame.display.get_surface() or pygame.display.set_mode(SIZE)
-        self.fonts = {size: _font(size) for size in (14, 18, 22, 28)}
+        self.fonts = {size: _font(size) for size in (14, 16, 18, 22, 28, 64)}
         self.stages = load_stages(DATA_PATH)
         self.index = 0                       # 選択中(中央)のステージ
         self._from = 0.0                     # スライドの出発位置
@@ -56,6 +92,7 @@ class StageSelect:
         self.back_rect = pygame.Rect(40, 520, 180, 48)
         self.arrow_rects = self._arrow_rects()
         self._card_cache = {}
+        self._images = {}                    # ステージのid → イラスト (なければ None)
 
     def _arrow_rects(self):
         n = len(self.stages)
@@ -110,10 +147,16 @@ class StageSelect:
     def _choose(self, index):
         """選んだステージを開始する。中身がなければ「準備中」を出して、選択画面に戻る。"""
         stage = self.stages[index]
+        if stage.get("playable"):                # 遊べるステージ: 終わったらこの画面に戻る
+            if play_stage(stage) == "quit":
+                return "quit"
+            self.screen = pygame.display.get_surface()
+            self.mouse = pygame.mouse.get_pos()
+            return None
         handler = STAGE_HANDLERS.get(stage["id"])
         if handler is not None:
             return handler()
-        self.notice = (f"「{stage['name']}」は準備中です", pygame.time.get_ticks() + NOTICE_MS)
+        self.notice = (f"ステージ{index + 1}は準備中です", pygame.time.get_ticks() + NOTICE_MS)
         return None
 
     def handle_event(self, event):
@@ -168,37 +211,61 @@ class StageSelect:
         return None
 
     # ---------- 描画 ----------
-    def _text(self, text, size, center=None, topleft=None, color=TEXT):
-        surface = self.fonts[size].render(text, True, color)
+    def _text(self, text, size, center=None, topleft=None, color=None):
+        surface = self.fonts[size].render(text, True, C("text") if color is None else color)
         rect = surface.get_rect(center=center) if center is not None else surface.get_rect(topleft=topleft)
         self.screen.blit(surface, rect)
 
     def _background(self):
-        self.screen.fill(BACKGROUND)
+        self.screen.fill(C("bg"))
         for x in range(25, 1000, 55):
             for y in range(25, 600, 55):
-                pygame.draw.circle(self.screen, (19, 38, 29), (x, y), 1)
+                pygame.draw.circle(self.screen, C("dot"), (x, y), 1)
         for side in (0, 1):
             for i in range(7):
                 x = 50 + i * 24 if side == 0 else 950 - i * 24
                 y = 595 - i * 33
-                pygame.draw.line(self.screen, (34, 69, 44), (x, 600), (x, y - 32), 2)
-                pygame.draw.ellipse(self.screen, (25, 57, 36), (x - 24, y - 30, 24, 12))
-                pygame.draw.ellipse(self.screen, (35, 73, 44), (x, y - 48, 27, 13))
+                pygame.draw.line(self.screen, C("deco_stem"), (x, 600), (x, y - 32), 2)
+                pygame.draw.ellipse(self.screen, C("deco_a"), (x - 24, y - 30, 24, 12))
+                pygame.draw.ellipse(self.screen, C("deco_b"), (x, y - 48, 27, 13))
+
+    def _stage_image(self, stage_id):
+        if stage_id not in self._images:
+            try:
+                self._images[stage_id] = pygame.image.load(str(STAGE_IMAGE_DIR / f"{stage_id}.png")).convert_alpha()
+            except Exception:
+                self._images[stage_id] = None            # ファイルがない・読めないときは、代わりの絵にする
+        return self._images[stage_id]
 
     def _card_surface(self, i):
-        """カード1枚の絵 (等倍)。描くときに縮小して使う"""
+        """カード1枚の絵 (等倍)。描くときに縮小して使う。上: イラスト / 見出し「ステージN」 / 説明"""
         if i in self._card_cache:
             return self._card_cache[i]
         stage = self.stages[i]
         surf = pygame.Surface(CARD_SIZE, pygame.SRCALPHA)
-        pygame.draw.rect(surf, (28, 62, 40), surf.get_rect(), border_radius=16)
-        pygame.draw.rect(surf, ACCENT, surf.get_rect(), 2, border_radius=16)
-        name = self.fonts[28].render(stage["name"], True, TEXT)
-        surf.blit(name, name.get_rect(center=(CARD_SIZE[0] // 2, 80)))
-        for j, line in enumerate(wrap_text(stage["description"], self.fonts[18], CARD_SIZE[0] - 60)[:4]):
-            text = self.fonts[18].render(line, True, (205, 222, 200))
-            surf.blit(text, text.get_rect(center=(CARD_SIZE[0] // 2, 142 + j * 26)))
+        pygame.draw.rect(surf, C("card"), surf.get_rect(), border_radius=16)
+        pygame.draw.rect(surf, C("accent"), surf.get_rect(), 2, border_radius=16)
+        # イラスト (assets/stages/<id>.png) か、ステージごとの色の背景にステージ番号 (色はidから決めるので、ステージが増えても変わらない)
+        image = self._stage_image(stage["id"])
+        if image is not None:
+            pygame.draw.rect(surf, C("image_bg"), ART_BOX, border_radius=10)
+            scale = min(ART_BOX.width / image.get_width(), ART_BOX.height / image.get_height())
+            picture = pygame.transform.smoothscale(image, (max(1, int(image.get_width() * scale)), max(1, int(image.get_height() * scale))))
+            surf.blit(picture, picture.get_rect(center=ART_BOX.center))
+        else:
+            pygame.draw.rect(surf, C(f"art_{sum(ord(c) for c in stage['id']) % 6 + 1}"), ART_BOX, border_radius=10)
+            number = self.fonts[64].render(str(i + 1), True, C("art_text"))
+            surf.blit(number, number.get_rect(center=ART_BOX.center))
+        pygame.draw.rect(surf, C("image_edge"), ART_BOX, 1, border_radius=10)
+        heading = self.fonts[22].render(f"ステージ{i + 1}", True, C("text"))
+        surf.blit(heading, heading.get_rect(center=(CARD_SIZE[0] // 2, 128)))
+        for size in DESC_SIZES:                          # 収まる一番大きい文字サイズ (最後まで収まらなければ、最小サイズで4行まで)
+            lines = wrap_text(stage["description"], self.fonts[size], CARD_SIZE[0] - 40)
+            if len(lines) * (size + 4) <= DESC_HEIGHT:
+                break
+        for j, line in enumerate(lines[:DESC_HEIGHT // (size + 4)]):
+            text = self.fonts[size].render(line, True, C("card_text"))
+            surf.blit(text, text.get_rect(center=(CARD_SIZE[0] // 2, DESC_TOP + (size + 4) // 2 + j * (size + 4))))
         self._card_cache[i] = surf
         return surf
 
@@ -207,9 +274,9 @@ class StageSelect:
 
     def _button(self, rect, label, enabled, active):
         if not enabled:
-            fill, edge, color = (16, 30, 23), (40, 58, 46), (88, 105, 92)      # 押せない見た目
+            fill, edge, color = C("disabled_fill"), C("disabled_edge"), C("disabled_text")      # 押せない見た目
         else:
-            fill, edge, color = (51, 96, 56) if active else (22, 49, 33), ACCENT if active else (56, 86, 60), TEXT
+            fill, edge, color = C("button_hover") if active else C("button"), C("accent") if active else C("button_edge"), C("text")
         pygame.draw.rect(self.screen, fill, rect, border_radius=10)
         pygame.draw.rect(self.screen, edge, rect, 2 if (enabled and active) else 1, border_radius=10)
         self._text(label, 22, center=rect.center, color=color)
@@ -217,7 +284,7 @@ class StageSelect:
     def draw(self):
         self._background()
         self._text("ゲームモード", 28, center=(500, 60))
-        self._text("ステージを選んでください", 14, center=(500, 96), color=MUTED)
+        self._text("ステージを選んでください", 14, center=(500, 96), color=C("muted"))
         pos = self.position()
         for i, rect, scale in self._visible_cards(pos):
             card = pygame.transform.smoothscale(self._card_surface(i), rect.size)
@@ -227,7 +294,7 @@ class StageSelect:
         # 中央のカードの選択の強調 (キーボード操作中、カルーセルにフォーカスがあるとき)
         if self.stages and self.keyboard and self.focus == "stages":
             rect, _ = self._card_rect(self.index, pos)
-            pygame.draw.rect(self.screen, (255, 255, 255), rect.inflate(8, 8), 1, border_radius=18)
+            pygame.draw.rect(self.screen, C("focus_ring"), rect.inflate(8, 8), 1, border_radius=18)
         # 左右の矢印と、いまの位置を示す点 (●○○○)
         for name, label, direction in (("left", "◀", -1), ("right", "▶", 1)):
             rect = self.arrow_rects[name]
@@ -236,28 +303,28 @@ class StageSelect:
         for i in range(len(self.stages)):
             cx, cy = self._dot_center(i)
             if i == self.index:
-                pygame.draw.circle(self.screen, ACCENT, (cx, cy), 7)
+                pygame.draw.circle(self.screen, C("accent"), (cx, cy), 7)
             else:
-                pygame.draw.circle(self.screen, (120, 150, 125), (cx, cy), 6, 2)
+                pygame.draw.circle(self.screen, C("dot_idle"), (cx, cy), 6, 2)
         back_active = (self.keyboard and self.focus == "back") or \
                       ((not self.keyboard) and self.back_rect.collidepoint(self.mouse))
-        pygame.draw.rect(self.screen, (51, 96, 56) if back_active else (22, 49, 33), self.back_rect, border_radius=9)
-        pygame.draw.rect(self.screen, ACCENT if back_active else (56, 86, 60), self.back_rect, 2 if back_active else 1, border_radius=9)
+        pygame.draw.rect(self.screen, C("button_hover") if back_active else C("button"), self.back_rect, border_radius=9)
+        pygame.draw.rect(self.screen, C("accent") if back_active else C("button_edge"), self.back_rect, 2 if back_active else 1, border_radius=9)
         self._text("戻る", 22, center=self.back_rect.center)
         # 右上の丸い「？」ボタン (ゲームモードのあそびかた)
         hover = (not self.keyboard) and self._help_hit(self.mouse)
-        pygame.draw.circle(self.screen, (51, 96, 56) if hover else (22, 49, 33), self.help_center, self.help_radius)
-        pygame.draw.circle(self.screen, ACCENT if hover else (56, 86, 60), self.help_center, self.help_radius, 2)
+        pygame.draw.circle(self.screen, C("button_hover") if hover else C("button"), self.help_center, self.help_radius)
+        pygame.draw.circle(self.screen, C("accent") if hover else C("button_edge"), self.help_center, self.help_radius, 2)
         self._text("？", 28, center=self.help_center)
-        self._text("あそびかた", 14, center=(self.help_center[0], self.help_center[1] + 36), color=MUTED)
-        self._text("←→:切り替え / Enter:決定 / Esc:戻る", 14, center=(500, 586), color=MUTED)
+        self._text("あそびかた", 14, center=(self.help_center[0], self.help_center[1] + 36), color=C("muted"))
+        self._text("←→:切り替え / Enter:決定 / Esc:戻る", 14, center=(500, 586), color=C("muted"))
         if self.notice is not None:
             if pygame.time.get_ticks() < self.notice[1]:
                 box = pygame.Rect(0, 0, 420, 90)
                 box.center = (500, 300)
-                pygame.draw.rect(self.screen, (8, 19, 16), box, border_radius=12)
-                pygame.draw.rect(self.screen, (163, 204, 131), box, 2, border_radius=12)
-                self._text(self.notice[0], 28, center=box.center, color=(163, 204, 131))
+                pygame.draw.rect(self.screen, C("popup"), box, border_radius=12)
+                pygame.draw.rect(self.screen, C("accent_bright"), box, 2, border_radius=12)
+                self._text(self.notice[0], 28, center=box.center, color=C("accent_bright"))
             else:
                 self.notice = None
 

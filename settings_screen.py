@@ -10,7 +10,8 @@ import pygame
 import config
 import save_load
 from explanation_settings import ExplanationSettings
-from title_screen import SIZE, BACKGROUND, TEXT, MUTED, _font
+from title_screen import SIZE, _font
+from theme import color as C
 
 # 季節ONのときの基準値 (設定画面を開く前のconfigの値を控えておく)
 _DEFAULT_TEMP_SUMMER = config.TEMP_SUMMER
@@ -19,9 +20,6 @@ _DEFAULT_SEASON_FOOD_MULT = copy.deepcopy(config.SEASON_FOOD_MULT)
 _DEFAULT_RL_LEARNING_RATE = config.RL_LEARNING_RATE
 _DEFAULT_TEMPERATURE = config.TEMPERATURE
 
-ACCENT = (152, 197, 123)
-DISABLED = (88, 105, 92)
-ERROR = (240, 140, 130)
 
 # 数値項目: (キー, ラベル, 最小, 最大, 1回の増減)
 RANGES = {"fixed_temp": (0, 40, 1), "herb": (10, 3000, 50), "carn": (0, 1000, 10)}
@@ -286,31 +284,31 @@ class SettingsScreen:
         return None
 
     # ---------- 描画 ----------
-    def _text(self, text, size, center=None, topleft=None, color=TEXT):
-        surface = self.fonts[size].render(text, True, color)
+    def _text(self, text, size, center=None, topleft=None, color=None):
+        surface = self.fonts[size].render(text, True, C("text") if color is None else color)
         rect = surface.get_rect(center=center) if center is not None else surface.get_rect(topleft=topleft)
         self.screen.blit(surface, rect)
         return rect
 
     def _background(self):
-        self.screen.fill(BACKGROUND)
+        self.screen.fill(C("bg"))
         for x in range(25, 1000, 55):
             for y in range(25, 600, 55):
-                pygame.draw.circle(self.screen, (19, 38, 29), (x, y), 1)
+                pygame.draw.circle(self.screen, C("dot"), (x, y), 1)
         for side in (0, 1):
             for i in range(7):
                 x = 50 + i * 24 if side == 0 else 950 - i * 24
                 y = 595 - i * 33
-                pygame.draw.line(self.screen, (34, 69, 44), (x, 600), (x, y - 32), 2)
-                pygame.draw.ellipse(self.screen, (25, 57, 36), (x - 24, y - 30, 24, 12))
-                pygame.draw.ellipse(self.screen, (35, 73, 44), (x, y - 48, 27, 13))
+                pygame.draw.line(self.screen, C("deco_stem"), (x, 600), (x, y - 32), 2)
+                pygame.draw.ellipse(self.screen, C("deco_a"), (x - 24, y - 30, 24, 12))
+                pygame.draw.ellipse(self.screen, C("deco_b"), (x, y - 48, 27, 13))
 
     def _button(self, rect, label, enabled=True, active=False, selected=False):
         if not enabled:
-            fill, edge, color = (16, 30, 23), (40, 58, 46), DISABLED
+            fill, edge, color = C("disabled_fill"), C("disabled_edge"), C("disabled_text")
         else:
-            fill = (51, 96, 56) if active else (22, 49, 33)
-            edge, color = (ACCENT if active or selected else (56, 86, 60)), TEXT
+            fill = C("button_hover") if active else C("button")
+            edge, color = (C("accent") if active or selected else C("button_edge")), C("text")
         pygame.draw.rect(self.screen, fill, rect, border_radius=9)
         pygame.draw.rect(self.screen, edge, rect, 1, border_radius=9)
         self._text(label, 22, center=rect.center, color=color)
@@ -319,22 +317,22 @@ class SettingsScreen:
         self._background()
         self.explanation.draw(self.screen, self._focused() if self.keyboard else None)
         self._text("観察モードの設定", 28, center=(500, 56))
-        self._text("開始する前に条件を選べます", 14, center=(500, 86), color=MUTED)
+        self._text("開始する前に条件を選べます", 14, center=(500, 86), color=C("muted"))
         focus_kind, focus_key = self._focused()
         for key, label, kind in self.ROWS:
             rect = self.row_rects[key]
             enabled = self._enabled(key)
             focused = self.keyboard and focus_kind == "row" and focus_key == key
-            pygame.draw.rect(self.screen, (16, 36, 27), rect, border_radius=10)
-            pygame.draw.rect(self.screen, ACCENT if focused else (44, 76, 52), rect, 2 if focused else 1, border_radius=10)
-            self._text(label, 18, topleft=(rect.x + 20, rect.y + 9), color=TEXT if enabled else DISABLED)
+            pygame.draw.rect(self.screen, C("surface"), rect, border_radius=10)
+            pygame.draw.rect(self.screen, C("accent") if focused else C("surface_edge"), rect, 2 if focused else 1, border_radius=10)
+            self._text(label, 18, topleft=(rect.x + 20, rect.y + 9), color=C("text") if enabled else C("disabled_text"))
             hint = {"herb": "数値欄をクリックして入力し、Enterで確定 (10〜3000)",
                     "carn": "数値欄をクリックして入力し、Enterで確定 (0〜1000)",
                     "rl": "ニューロエボリューションがOFFのときは選べません",
                     "fixed_temp": "季節がOFFのときだけ入力できます (0〜40)",
                     "seasons": "OFFにすると気温は固定で、季節の演出は出ません"}.get(key)
             if hint:
-                self._text(hint, 14, topleft=(rect.x + 20, rect.y + 31), color=MUTED if enabled else DISABLED)
+                self._text(hint, 14, topleft=(rect.x + 20, rect.y + 31), color=C("muted") if enabled else C("disabled_text"))
             if kind == "toggle":
                 on = self.s[key] and enabled
                 tr = self.toggle_rects[key]
@@ -348,10 +346,10 @@ class SettingsScreen:
                     self._button(r, sign, enabled, enabled and r.collidepoint(self.mouse) and not self.keyboard)
                 vr = self.value_rects[key]
                 editing = enabled and self.editing is not None and self._editing_key == key
-                pygame.draw.rect(self.screen, (9, 22, 17) if enabled else (16, 30, 23), vr, border_radius=7)
-                pygame.draw.rect(self.screen, ACCENT if editing else (56, 86, 60), vr, 2 if editing else 1, border_radius=7)
+                pygame.draw.rect(self.screen, C("input") if enabled else C("disabled_fill"), vr, border_radius=7)
+                pygame.draw.rect(self.screen, C("accent") if editing else C("button_edge"), vr, 2 if editing else 1, border_radius=7)
                 shown = (self.editing or "") + ("|" if editing else "") if editing else str(self.s[key])
-                self._text(shown, 22, center=vr.center, color=TEXT if enabled else DISABLED)
+                self._text(shown, 22, center=vr.center, color=C("text") if enabled else C("disabled_text"))
         for key, label in self.BUTTONS:
             rect = self.button_rects[key]
             enabled = self._button_enabled(key)
@@ -359,10 +357,10 @@ class SettingsScreen:
             hovered = (not self.keyboard) and rect.collidepoint(self.mouse)
             self._button(rect, label, enabled, active=enabled and (focused or hovered), selected=focused)
         if not self.can_load:
-            self._text("セーブデータがないため「ロード」は選べません", 14, center=(500, 566), color=DISABLED)
+            self._text("セーブデータがないため「ロード」は選べません", 14, center=(500, 566), color=C("disabled_text"))
         if self.message:
-            self._text(self.message, 18, center=(500, 584), color=ERROR)
-        self._text("↑↓:項目 / ←→:変更 / Enter:決定・数値入力 / Esc:戻る", 14, center=(500, 474), color=MUTED)
+            self._text(self.message, 18, center=(500, 584), color=C("error"))
+        self._text("↑↓:項目 / ←→:変更 / Enter:決定・数値入力 / Esc:戻る", 14, center=(500, 474), color=C("muted"))
 
 
 def show_settings_screen(message=None):
