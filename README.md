@@ -4,7 +4,7 @@ Python・Pygame製の共同卒業制作です。最新mainの生態系・描画�
 
 ## ダウンロード
 
-この統合変更はPRでレビューし、**mainへマージした後**に [mainのZIP](https://github.com/g025c1269-ux/sotugyouseisaku-teamv/archive/refs/heads/main.zip) から利用できます。レビュー中は [統合ブランチのZIP](https://github.com/g025c1269-ux/sotugyouseisaku-teamv/archive/refs/heads/feature/annual-explanation-sync.zip) を使用してください。
+この統合変更はPRでレビューし、**mainへマージした後**に [mainのZIP](https://github.com/g025c1269-ux/sotugyouseisaku-teamv/archive/refs/heads/main.zip) から利用できます。レビュー中は [統合ブランチのZIP](https://github.com/g025c1269-ux/sotugyouseisaku-teamv/archive/refs/heads/fix/ai-annual-reliability.zip) を使用してください。
 
 ZIPを右クリックして「すべて展開」し、以前のダウンロードとは別の新しいフォルダーへ展開してください。ZIP内から直接実行せず、`main.py` と `requirements.txt` がある階層を開きます。Gitは不要です。
 
@@ -34,6 +34,8 @@ AI解説を選ぶと右側に導入案内が表示され、ローカルOllamaと
 シミュレーション中はN/「解説」で選んだ解説を開けます。**両方式とも全体解説は年末に1回だけ更新**します。既存の春夏秋冬1周期（現在12世代）が1年です。年内は前回の文章を保持し、初回は「最初の1年間を観察中！」と表示します。通常解説は草食・肉食の年初と年末の比較を2つの吹き出しで紹介します。AI解説も同じ年間データを使い、生成中は前回の完成した総括を残します。AI画面の「観察」にある両種の解説も年1回更新です。個体の通常解説・詳細と手動AI解説は従来どおり使えます。モデル名・接続先・AIプロンプトは変更していません。
 
 [変更範囲・検証結果・Windows実機の確認手順](docs/explanation_mode.md)。追加のPythonライブラリはありません。Windows実機と本物のモデルでの生成はクラウドから確認していません。
+
+AI年間総括の文字数は目安とし、生成時間・エラー種別を記録します。成功／通常解説への代替を画面で区別できます。[安定化の変更と実機診断手順](docs/ai_reliability.md)を参照してください。
 
 ## 利用できる機能
 
@@ -77,7 +79,7 @@ AI解説を選ぶと右側に導入案内が表示され、ローカルOllamaと
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-解説方式の選択・AI通信・年間総括・年1回更新の関連44テストが成功しています。全68テストのうち5件は、変更前mainにも存在する画面遷移・初期表示・旧表記の想定不整合で失敗します（新たな失敗はありません）。詳細と個別実行コマンドは [検証記録](docs/explanation_mode.md) を参照してください。画面テストはSDL offscreen、AI通信は代役/モックです。
+解説方式の選択・AI通信・年間総括・年1回更新の関連52テストが成功しています。全76テストのうち5件は、変更前mainにも存在する画面遷移・初期表示・旧表記の想定不整合で失敗します（新たな失敗はありません）。詳細と個別実行コマンドは [検証記録](docs/explanation_mode.md) を参照してください。画面テストはSDL offscreen、AI通信は代役/モックです。
 
 クリーンなPython 3.12環境での導入とZIP展開後の起動をLinux上で検証し、主要依存のWindows 64bit用wheelの取得も確認しています。**Windows実機上での表示・手動操作は未検証**です。PRレビュー時に上記手順で確認してください。
 

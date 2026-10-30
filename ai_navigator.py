@@ -1,5 +1,8 @@
 """Annual reports and manual individual navigation share one background request slot."""
 from dataclasses import dataclass
+import time
+from datetime import datetime, timezone
+from ai_diagnostics import write_diagnostics
 from queue import Empty, Queue
 from threading import Thread
 
@@ -18,6 +21,8 @@ class Comment:
     stamp: tuple = ()
     raw_response: str = ''
     request: dict = None
+    diagnostics: dict = None
+    error_kind: str = ""
 
 
 class AINavigator:
@@ -50,18 +55,29 @@ class AINavigator:
         self.poll()
 
     @staticmethod
-    def _generate(client, context, token, results):
+    def _generate(client, context, token, results, log_path=None):
         # No World, Organism, Pygame, or simulation RNG is accessible here.
         request = None
+        started = time.monotonic()
+        started_at = datetime.now(timezone.utc).isoformat()
         try:
             client = client or OllamaExplainer()
             request = client.build_request(context) if hasattr(client, 'build_request') else {'test_client': type(client).__name__, 'context': context}
             text = client.generate(context)
             result = Comment(text=text, stamp=(context['snapshot']['generation'], context['snapshot']['step']))
         except OllamaError as exc:
-            result = Comment(error=str(exc), raw_response=exc.raw_response or '')
+            result = Comment(error=str(exc), raw_response=exc.raw_response or '', error_kind=exc.kind)
         except Exception:
-            result = Comment(error='AIでエラーが起きたよ。ルール解説を表示するね。')
+            result = Comment(error='AIでエラーが起きたよ。ルール解説を表示するね。', error_kind='internal_error')
+        result.diagnostics = dict(getattr(client, 'last_diagnostics', None) or {
+            'year': context.get('year'), 'target': context.get('target'),
+            'model': request.get('model') if request else None,
+            'started_at': started_at, 'finished_at': datetime.now(timezone.utc).isoformat(),
+            'elapsed_seconds': round(time.monotonic() - started, 6),
+            'success': not bool(result.error), 'error_kind': result.error_kind or None, 'ollama': {},
+        })
+        if log_path is not None:
+            write_diagnostics(log_path, result.diagnostics)
         result.request = request
         results.put((token, result))
 
@@ -79,7 +95,7 @@ class AINavigator:
         token = (target, self._world_revision, self._selection_revision)
         self.comments.pop(target, None)
         self.busy, self.pending_target = True, target
-        Thread(target=self._generate, args=(self.client, snapshot, token, self._results),
+        Thread(target=self._generate, args=(self.client, snapshot, token, self._results, self.annual.log_path.with_suffix(".debug.jsonl")),
                name='ollama-navigator', daemon=True).start()
         return True
 
@@ -95,7 +111,7 @@ class AINavigator:
                 entry = self.annual.entries[world_revision]  # token carries the completed year
                 entry.update(status='fallback' if result.error else 'ready', text=result.text,
                              error=result.error, raw_response=result.raw_response or result.text,
-                             request=result.request)
+                             request=result.request, diagnostics=result.diagnostics, error_kind=result.error_kind)
                 self.annual.save()
         elif (not self._closed and world_revision == self._world_revision
                 and (target != 'individual' or selection_revision == self._selection_revision)):
@@ -115,7 +131,7 @@ class AINavigator:
                 entry['status'] = 'running'
                 self.annual.save()
                 self.busy, self.pending_target = True, 'annual'
-                Thread(target=self._generate, args=(self.client, entry['context'], ('annual', year, 0), self._results),
+                Thread(target=self._generate, args=(self.client, entry['context'], ('annual', year, 0), self._results, self.annual.log_path.with_suffix('.debug.jsonl')),
                        name='ollama-annual-report', daemon=True).start()
                 return
 
@@ -143,9 +159,15 @@ class AINavigatorView:
         self.previous_rect = pygame.Rect(x + 12, y + 122, 115, 34)
         self.latest_rect = pygame.Rect(x + 139, y + 122, 115, 34)
         self.next_rect = pygame.Rect(x + 266, y + 122, 115, 34)
+        self.scroll = 0
+        self.max_scroll = 0
+        self._display_key = None
 
     def handle_event(self, event):
         import pygame
+        if event.type == pygame.MOUSEWHEEL:
+            self.scroll = max(0, min(self.max_scroll, self.scroll - event.y * 3))
+            return
         if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
             return
         for target, rect in self.tabs.items():
@@ -191,14 +213,23 @@ class AINavigatorView:
             for rect, label in ((self.previous_rect, '前の総括'), (self.latest_rect, '最新へ'), (self.next_rect, '次の総括')):
                 self._button(screen, panel.small, rect, label, enabled=entry is not None)
             pending = any(r['status'] in ('queued', 'running') for r in history.entries.values())
-            message = '次の年間レポートを作成中...' if pending else f'1年 = {history.recorder.cycle}世代 / 年末に1回だけ総括するよ。'
+            message = 'AI生成中：次の年間レポートを作成中...' if pending else f'1年 = {history.recorder.cycle}世代 / 年末に1回だけ総括するよ。'
             if entry:
                 c = entry['context']
                 title = f"{c['year']}年目の総括" + ('（途中まで）' if c['partial'] else '')
                 text = entry['text'] or entry['fallback']
-                caption = ('AI総括' if entry['text'] else 'ルール総括') + f" / 第{c['start']['generation']}〜{c['end']['generation']}世代 / 初回記録"
-                if not pending and entry['error']:
-                    message = entry['error']
+                caption = ('AI生成成功 · AI総括' if entry['text'] else '通常解説（AI生成失敗）') + f" / 第{c['start']['generation']}〜{c['end']['generation']}世代"
+                elapsed = (entry.get('diagnostics') or {}).get('elapsed_seconds')
+                if elapsed is not None:
+                    caption += f' / {elapsed:.1f}秒'
+                if entry['error']:
+                    kind = entry.get('error_kind', '')
+                    reason = {'timeout': 'タイムアウト', 'response_format': '回答形式エラー',
+                              'connection_error': 'Ollama接続不可', 'model_not_found': 'モデル未導入',
+                              'http_error': 'Ollama応答エラー'}.get(kind, 'AI生成失敗')
+                    message += ' / ' + reason + '：通常解説に切り替え' if pending else ''
+                    if not pending:
+                        message = reason + '：通常解説に切り替えたよ。'
             else:
                 title = '最初の1年間を観察中！'
                 text = '1年が終わったら、草食たちと肉食組の変化を振り返るよ。観察メモや個体の解説は、今までどおり確認できるよ！'
@@ -229,7 +260,29 @@ class AINavigatorView:
         for i, line in enumerate(panel._wrap(message, panel.small, w - 24)):
             screen.blit(panel.small.render(line, True, (234, 198, 137)), (x + 12, y + 172 + i * 20))
         panel.layouts = []
-        panel._card(screen, y + 225, 240, title, '', text, (173, 209, 138))
+        if not annual:
+            panel._card(screen, y + 225, 240, title, '', text, (173, 209, 138))
+        else:
+            display_key = (controller.target, title, text)
+            if display_key != self._display_key:
+                self.scroll = 0
+                self._display_key = display_key
+            # Keep the existing bubble/icon; scroll only its text, without truncation.
+            panel._card(screen, y + 225, 240, title, '', '', (173, 209, 138))
+            bubble = panel.layouts[-1][0]
+            font = panel.small
+            lines = panel._wrap(text, font, bubble.width - 20)
+            line_height = font.get_height() + 4
+            visible = max(1, (bubble.height - 18) // line_height)
+            self.max_scroll = max(0, len(lines) - visible)
+            self.scroll = min(self.scroll, self.max_scroll)
+            clip = screen.get_clip()
+            screen.set_clip(bubble.inflate(-16, -16))
+            for i, line in enumerate(lines[self.scroll:self.scroll + visible]):
+                screen.blit(font.render(line, True, (231, 240, 226)), (bubble.x + 10, bubble.y + 9 + i * line_height))
+            screen.set_clip(clip)
+            if self.max_scroll:
+                caption += ' / 吹き出し内はホイールでスクロール'
         for i, line in enumerate(panel._wrap(caption, panel.small, w - 24)):
             screen.blit(panel.small.render(line, True, (161, 190, 169)), (x + 12, y + 480 + i * 20))
         for i, line in enumerate(panel._wrap(notes, panel.small, w - 24)):

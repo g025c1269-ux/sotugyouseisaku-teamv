@@ -89,14 +89,14 @@ class OllamaClientTests(unittest.TestCase):
             self.set_comment(text)
             self.assertEqual(self.client.generate({'target': 'annual', 'year': 1}), text)
             payload = self.calls[-1][1]
-            self.assertEqual(payload['format']['properties']['comment']['minLength'], 160)
-            self.assertEqual(payload['format']['properties']['comment']['maxLength'], 190)
+            self.assertEqual(payload['format']['properties']['comment']['minLength'], 40)
+            self.assertEqual(payload['format']['properties']['comment']['maxLength'], 2000)
             self.assertEqual(payload['options']['num_predict'], 512)
             self.assertIs(payload['think'], False)
             self.assertIn('断定しない', payload['messages'][0]['content'])
 
     def test_annual_invalid_response_is_kept_for_audit(self):
-        for text in ('あ' * 180, '草食と肉食' + 'あ' * 186, '草食と肉食' + 'あ' * 154):
+        for text in ('あ' * 180, '草食だけ' + 'あ' * 180, '草食と肉食' + 'あ' * 2000):
             self.set_comment(text)
             with self.assertRaises(OllamaError) as caught:
                 self.client.generate({'target': 'annual', 'year': 1})

@@ -76,6 +76,9 @@ class NavigatorPanel:
                         self.view = 'detail'
                         self.detail.open = True
                 return True
+        if (self.view == 'ai' and event.type == pygame.MOUSEWHEEL
+                and self.rect.collidepoint(pygame.mouse.get_pos())):
+            self.ai.handle_event(event)
         # A wheel over the navigator must never zoom the map behind it.
         return event.type == pygame.MOUSEWHEEL and self.rect.collidepoint(pygame.mouse.get_pos())
 
