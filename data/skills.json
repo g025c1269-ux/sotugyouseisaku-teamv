@@ -3,26 +3,47 @@
     {
       "id": "food",
       "name": "食料を撒く",
-      "description": "選んだ場所に食べ物を出します。",
+      "description": "選んだ場所から半径6マス以内の陸地に、食べ物を最大40個出します。すでに食べ物のあるマスと海には出ません。",
       "cost_level": 1,
       "needs_target": true,
-      "image": null
+      "image": null,
+      "cost": 10,
+      "params": {
+        "radius": 6,
+        "max_count": 40
+      },
+      "key": "Z",
+      "tip": "草食が減ってきたときに。食べ物の少ない場所に撒きましょう。"
     },
     {
       "id": "spawn",
       "name": "個体を補充する",
-      "description": "選んだ場所に草食か肉食を出します。全滅しそうなときの保険です。",
+      "description": "選んだ場所から半径4マス以内の陸地に、草食なら20匹、肉食なら8匹を出します。全滅しそうなときの保険です。",
       "cost_level": 3,
       "needs_target": true,
-      "image": null
+      "image": null,
+      "cost": 60,
+      "params": {
+        "radius": 4,
+        "herbivore_count": 20,
+        "carnivore_count": 8
+      },
+      "key": "X",
+      "tip": "数が減った種を、ピンチになる前に少しずつ足しましょう。"
     },
     {
       "id": "adapt",
       "name": "順応",
-      "description": "生き物の温度適性を、今の気温に少し近づけます。効果は子にも受け継がれます。",
+      "description": "全員の温度適性を、今の気温(気温÷40)に向けて、差の25%だけ近づけます。効果は子にも受け継がれます。",
       "cost_level": 2,
       "needs_target": false,
-      "image": null
+      "image": null,
+      "cost": 40,
+      "params": {
+        "fraction": 0.25
+      },
+      "key": "C",
+      "tip": "気温と適正気温が離れたときに。冬の前に使うと安心です。"
     }
   ]
 }

@@ -1,0 +1,72 @@
+{
+  "default": [
+    {
+      "condition": "carn_danger",
+      "text": "肉食がピンチ！ 食料を撒いて草食を増やすか、肉食を補充しよう"
+    },
+    {
+      "condition": "carn_decline",
+      "text": "肉食が減っているよ。草食が足りないと、肉食も育たないんだ"
+    },
+    {
+      "condition": "herb_decline",
+      "text": "草食が減っているよ。食料を撒いて、食べ物を増やしてみよう"
+    },
+    {
+      "condition": "temp_gap",
+      "text": "みんなの適正気温が今の気温から離れているよ。順応を使ってみよう"
+    },
+    {
+      "condition": "normal",
+      "season": "spring",
+      "text": "春は食べ物が増える季節。草食が増えるチャンスだよ"
+    },
+    {
+      "condition": "normal",
+      "season": "summer",
+      "text": "夏は食べ物がいちばん多いよ。今のうちに数を増やしておこう"
+    },
+    {
+      "condition": "normal",
+      "season": "autumn",
+      "text": "もうすぐ冬。食べ物が減る前に、MPをためておくと安心だよ"
+    },
+    {
+      "condition": "normal",
+      "season": "winter",
+      "text": "冬は食べ物も少なくて寒いよ。数の減り方に気をつけよう"
+    },
+    {
+      "condition": "normal",
+      "max_generation": 6,
+      "text": "まずは様子を見よう。MPは時間とともにたまっていくよ"
+    },
+    {
+      "condition": "normal",
+      "min_generation": 18,
+      "text": "あと少し！ 最後まで両方の種を守りきろう"
+    }
+  ],
+  "famine": [
+    {
+      "condition": "normal",
+      "season": "spring",
+      "text": "春は気温が上がっていく季節。肉食の数を見ながら、順応のタイミングを考えよう"
+    },
+    {
+      "condition": "normal",
+      "season": "summer",
+      "text": "夏は暑い季節。適正気温が低い子は、つらくなるかもしれないよ"
+    },
+    {
+      "condition": "normal",
+      "season": "autumn",
+      "text": "もうすぐ冬。寒くなる前に、MPをためて順応に備えよう"
+    },
+    {
+      "condition": "normal",
+      "season": "winter",
+      "text": "冬は寒いよ。肉食の数をこまめに見ておこう"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "stages": [
+    {
+      "id": "eternal_winter", "name": "永遠の冬", "description": "春が来ない、いつまでも寒い世界です。気温がずっと低いまま続きます。",
+      "initial_herbivores": null, "initial_carnivores": null, "initial_food": null,
+      "food_mult": null, "fixed_temperature": null, "gene_ranges": null,
+      "terrain_seed": null, "clear_generations": 24, "playable": false
+    }
+  ]
+}

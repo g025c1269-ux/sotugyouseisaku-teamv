@@ -1,0 +1,10 @@
+{
+  "mp_max": 100,
+  "mp_regen_per_generation": 15,
+  "warnings": {
+    "decline_generations": 3,
+    "decline_ratio": 0.6,
+    "carnivore_danger_count": 30,
+    "temp_gap": 8
+  }
+}
