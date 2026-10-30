@@ -1,7 +1,7 @@
 {
   "base_url": "http://localhost:11434",
-  "model": "qwen3:4b",
-  "timeout_seconds": 60,
+  "model": "ecosystem-leaf",
+  "timeout_seconds": 120,
   "num_predict": 256,
   "num_ctx": 4096,
   "num_thread": 4,
