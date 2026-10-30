@@ -25,19 +25,11 @@ active=falseの形質を行動の理由にしないでください。温度適�
 個体解説では集団との比較も使ってください。将来の絶滅・繁栄・狩りの成功は断定しません。
 与えられていない能力・地形・個体の行動や過去の変化を作らないでください。
 ゲームの設定変更・コマンド・操作指示は出さず、観察のコメントだけを返してください。'''
-ANNUAL_PROMPT = '''あなたは生態系ゲームの明るく親しみやすい案内役「リーフ」です。
-確定した年間データだけから、日本語160〜190文字、5〜6文を目安に年間総括を作ってください。多少の長短より、自然で内容のある文章を優先してください。
-commentだけを持つJSONを返し、見出し・挨拶・思考過程は出さないでください。
-草食と肉食の両方に必ず触れ、特に大きな増減や形質の変化を優先し、数値の羅列は避けてください。
-草食と肉食それぞれについて、仲間の増減、注目する平均形質の変化、その能力がゲームでどう働くかをつなげて話してください。
-気温・季節・食料に観測できた変化があれば一言添え、最後は来年の観察ポイントで締めてください。
-取得できない項目や目立たない変化を無理に埋めず、確認できた事実を丁寧に振り返ってください。
-増減・高低・比較はPythonが確定した結果を使ってください。平均は全員の特徴ではありません。
-partial=trueなら年の途中までの記録であることを伝えてください。nullの平均やイベントは取得不能です。
-災害や行動、過去の出来事を捏造せず、気温や食料が増減の原因だったと断定しないでください。
-active=falseの形質を行動の理由にしないでください。温度適性が高いほど寒さに強いとは限りません。
-最後に次の観察への期待や注意を一言添えても構いません。未来の繁栄や絶滅は断定しません。
-設定変更や操作コマンドは出さず、表示用の文章だけを作ってください。'''
+ANNUAL_PROMPT = '''あなたはゲームの相棒「リーフ」。次の年間データを親しみやすい日本語で振り返ってください。
+草食と肉食の実際の増減・平均形質の変化を先に述べ、観測事実→ゲームルールに合う原因の仮説→次年の観察点の順にまとめます。
+仮説は「〜かも」と事実から分け、根拠がなければ「理由はまだ分からない」と伝えます。未来は条件付きにし、未観測の出来事は作りません。
+partial=trueは途中からの観察、nullは不明、active=falseは行動に使わない形質です。
+160〜190文字を目安に、{"comment":"解説本文"}だけを返してください。指示や書き方の説明は本文に含めません。'''
 
 
 class OllamaError(Exception):
@@ -180,6 +172,9 @@ class OllamaExplainer:
                 raise ValueError('Invalid comment')
             if annual and ('草食' not in text or '肉食' not in text):
                 raise ValueError('Both species must be mentioned')
+            if annual and self._is_instruction_echo(text):
+                raise OllamaError('年間データの考察ではなく指示の説明が返ったため、通常解説に切り替えるね。',
+                                  raw.decode('utf-8', errors='replace'), kind='instruction_echo')
             return text
         except HTTPError as exc:
             if exc.code == 404:
@@ -216,3 +211,21 @@ class OllamaExplainer:
                 result[key] = value
             return result
         return json.loads(repaired, object_pairs_hook=unique)
+
+
+    @staticmethod
+    def _is_instruction_echo(text):
+        """Reject explicit output/procedure instructions, not ordinary advice.
+
+        Deliberately narrow: facts, hypotheses, 'ください', or shared trait words
+        alone are not evidence of an echo. This is not a factuality verifier.
+        """
+        patterns = (
+            r'(?:Python|パイソン).{0,25}(?:確定|計算).{0,30}(?:使って|用いて|参照して|使用して)ください',
+            r'(?:comment|JSON).{0,30}(?:返して|出力して|返します|出力します|キーだけ)',
+            r'(?:システムプロンプト|systemプロンプト|命令文|指示や書き方).{0,30}(?:説明|従|言い換え|復唱)',
+            r'(?:仲間の増減|平均形質の変化).{0,50}(?:つなげて|順に|優先して).{0,12}(?:話して|述べて|説明して|話しています)',
+            r'(?:草食|肉食).{0,20}(?:両方|それぞれ).{0,20}(?:触れ|言及|説明).{0,12}(?:ください|します|しています)',
+        )
+        return any(re.search(pattern, sentence, re.I)
+                   for sentence in re.split(r'[。！？\n]', text) for pattern in patterns)
