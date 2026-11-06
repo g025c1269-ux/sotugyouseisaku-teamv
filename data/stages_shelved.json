@@ -5,6 +5,12 @@
       "initial_herbivores": null, "initial_carnivores": null, "initial_food": null,
       "food_mult": null, "fixed_temperature": null, "gene_ranges": null,
       "terrain_seed": null, "clear_generations": 24, "playable": false
+    },
+    {
+      "id": "desert", "name": "砂漠", "description": "ほとんどが砂漠の、乾いた世界です。食べ物が少なく、暑さも生き物を苦しめます。",
+      "initial_herbivores": null, "initial_carnivores": null, "initial_food": null,
+      "food_mult": null, "fixed_temperature": null, "gene_ranges": null,
+      "terrain_seed": null, "clear_generations": 24, "playable": false
     }
   ]
 }

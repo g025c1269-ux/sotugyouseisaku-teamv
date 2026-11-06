@@ -50,6 +50,11 @@
   "famine": [
     {
       "condition": "normal",
+      "max_generation": 3,
+      "text": "飢饉の世界は、食べ物がとても少ないよ。草食が減る前に、食料を撒いておこう"
+    },
+    {
+      "condition": "normal",
       "season": "spring",
       "text": "春は気温が上がっていく季節。肉食の数を見ながら、順応のタイミングを考えよう"
     },
@@ -67,6 +72,36 @@
       "condition": "normal",
       "season": "winter",
       "text": "冬は寒いよ。肉食の数をこまめに見ておこう"
+    }
+  ],
+  "meteor": [
+    {
+      "condition": "event_incoming",
+      "text": "隕石が来るよ！ 赤い円の中は、生き物も食べ物も消えちゃう。MPをためておこう"
+    },
+    {
+      "condition": "event_crater",
+      "text": "落ちた跡は、食べ物が湧きにくいよ。食料を撒いておこう"
+    },
+    {
+      "condition": "food_mult_low",
+      "below": 0.8,
+      "text": "隕石の粉塵で、世界中で食べ物が湧きにくいよ(灰色のもや)。食料を撒いて草食を守ろう"
+    },
+    {
+      "condition": "normal",
+      "max_generation": 2,
+      "text": "もうすぐ隕石が来るよ。MPは時間とともにたまっていくよ"
+    },
+    {
+      "condition": "normal",
+      "min_generation": 22,
+      "text": "あと少し！ 最後の隕石のあとも、両方の種を守りきろう"
+    },
+    {
+      "condition": "normal",
+      "season": "winter",
+      "text": "冬は気温も下がるよ。順応を使うか、食料で支えよう"
     }
   ]
 }

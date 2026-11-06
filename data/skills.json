@@ -18,15 +18,15 @@
     {
       "id": "spawn",
       "name": "個体を補充する",
-      "description": "選んだ場所から半径4マス以内の陸地に、草食なら20匹、肉食なら8匹を出します。全滅しそうなときの保険です。",
-      "cost_level": 3,
+      "description": "選んだ場所から半径4マス以内の陸地に、草食なら30匹、肉食なら12匹を出します。全滅しそうなときの保険です。",
+      "cost_level": 2,
       "needs_target": true,
       "image": null,
-      "cost": 60,
+      "cost": 40,
       "params": {
         "radius": 4,
-        "herbivore_count": 20,
-        "carnivore_count": 8
+        "herbivore_count": 30,
+        "carnivore_count": 12
       },
       "key": "X",
       "tip": "数が減った種を、ピンチになる前に少しずつ足しましょう。"

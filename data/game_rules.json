@@ -1,5 +1,6 @@
 {
   "mp_max": 100,
+  "mp_start": 50,
   "mp_regen_per_generation": 15,
   "warnings": {
     "decline_generations": 3,
