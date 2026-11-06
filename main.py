@@ -489,6 +489,21 @@ def _stage_outcome(world, done, gen):
     return {"outcome": outcome, "extinct": extinct, "generation": gen, "herbivores": herbs, "carnivores": carns}
 
 
+# --------------------------------------------------
+# 季節の演出 (桜・雪など。Eキーで切り替え) の、起動直後の表示。気温や食料の季節変化 (設定画面の「季節」) とは別のもの。
+# saves/ui_settings.json に "season_fx" (true/false) があればその値、なければ (読めない・形が違うときも) OFF。
+# --------------------------------------------------
+def _initial_season_fx():
+    try:
+        import json
+        import theme
+        with open(theme.SETTINGS_PATH, encoding="utf-8") as f:
+            value = json.load(f).get("season_fx")
+        return value if isinstance(value, bool) else False
+    except Exception:
+        return False
+
+
 # =============================================
 # リアルタイム可視化モード (pygame)
 # =============================================
@@ -509,6 +524,7 @@ def run_with_visualization(world, resume=None, stage=None, explanation_mode="rul
     clock = pygame.time.Clock()
     font, big_font, small_font = _load_fonts(pygame)
     renderer = PixelRenderer(pygame, world, small_font)
+    renderer.show_season_fx = _initial_season_fx()      # 季節の演出 (桜・雪など) は、起動直後はOFF (Eキーで切り替え)
     status_panel = NavigatorPanel((GRID_PANEL_SIZE, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT),
                                   ai_enabled=stage is None and explanation_mode == "ai")
 
@@ -537,15 +553,20 @@ def run_with_visualization(world, resume=None, stage=None, explanation_mode="rul
     paused_before = False   # スキルを選ぶ前の一時停止の状態 (取り消し・発動のあとに戻す)
     clear_generations = int(stage["clear_generations"]) if stage and stage.get("clear_generations") else None
     stage_result = None     # ゲームモード: 決着がついたときの結果
+    stage_events = None     # ゲームモード: ステージのイベント (隕石など。events のないステージでは何も起きない)
     if stage is not None:   # ゲームモード専用の右パネル (観察モードの右パネルは使わない)
         from skills import GameState, apply_skill
         from game_panel import GamePanel, load_hints
-        game = GameState()
+        game = GameState(mp_start=stage.get("mp_start"))      # ステージに mp_start があればそれ、なければ game_rules.json の値
         game_panel = GamePanel(
             pygame.Rect(GRID_PANEL_SIZE, 0, INFO_PANEL_WIDTH, WINDOW_HEIGHT), game.skills, game.rules, load_hints(),
             (font, big_font, small_font), status_panel,
             lambda x, y, w: _draw_speed_buttons(screen, pygame, small_font, x, y, w, speed_level, themed=True))
         menu_rect = game_panel.menu_rect
+        from meteor import StageEvents
+        stage_events = StageEvents(stage)
+        if stage_events and resume is None:       # 1世代目の始まり (2世代目にイベントがあれば、ここで予告する)
+            stage_events.on_generation_start(world, world.generation)
 
     def finish_skill():
         nonlocal skill_sel, paused
@@ -733,12 +754,18 @@ def run_with_visualization(world, resume=None, stage=None, explanation_mode="rul
                 accumulator -= steps_to_run / sps
                 for _ in range(steps_to_run):
                     gen_before = world.generation
+                    food_before = stage_events.before_step(world) if stage_events else None    # 隕石: 衝突の冬の倍率を入れ、穴のために食料を控える
                     if stage is None:
                         step_in_gen, extinct, done = status_panel.advance(world, _step_simulation, step_in_gen, extinct, done)
                     else:
                         step_in_gen, extinct, done = _step_simulation(world, step_in_gen, extinct, done, clear_generations)
+                    if stage_events:
+                        stage_events.after_step(world, food_before)     # 穴の中で新しく湧いた食料を確率で消し、衝突の冬を進める
                     if stage is not None:
                         game.tick()               # 進んだステップ分だけMPが回復する (一時停止中はここに来ない)
+                        if stage_events and step_in_gen == 0 and world.generation != gen_before:     # 世代の始まり
+                            for message in stage_events.on_generation_start(world, world.generation):
+                                toast = (message, pygame.time.get_ticks() + 4000)
                         stage_result = _stage_outcome(world, done, gen_before)
                         if stage_result:
                             break
@@ -752,6 +779,8 @@ def run_with_visualization(world, resume=None, stage=None, explanation_mode="rul
 
         screen.fill(BG_COLOR)
         renderer.draw(screen, world, selected_org)
+        if stage_events:
+            stage_events.draw(screen, renderer, big_font, GRID_PANEL_SIZE, small_font)      # 隕石の予告・穴・食料の倍率
         _draw_view_hud(screen, pygame, small_font, renderer, clock, follow, status_panel.open, game_mode=stage is not None)
         if stage is None:
             speed_button_rects = _draw_info_panel(
@@ -760,7 +789,8 @@ def run_with_visualization(world, resume=None, stage=None, explanation_mode="rul
             )
         else:
             game_panel.draw(screen, world, stage, game, clear_generations, paused, speed_level,
-                            skill_sel, skill_sel["species"] if skill_sel else None)
+                            skill_sel, skill_sel["species"] if skill_sel else None,
+                            event_state=stage_events.hint_state() if stage_events else None)      # 隕石の状態 (リーフのヒント用)
             speed_button_rects = game_panel.speed_rects
             if skill_sel is not None:                        # 盤面に、スキルが届く範囲を円で出す
                 mx, my = pygame.mouse.get_pos()

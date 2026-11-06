@@ -52,8 +52,9 @@ def compute_warnings(world, rules):
     return result
 
 
-def pick_hint(warnings, generation, hints, stage_id=None):
-    """優先順位: 肉食が危険 > 個体数の減少 > 気温のずれ > 進み具合 > 季節。1つだけ返す。
+def pick_hint(warnings, generation, hints, stage_id=None, event_state=None):
+    """優先順位: 肉食が危険 > 個体数の減少 > 気温のずれ > (イベント: 予告中 > 穴 > 食料の倍率) > 進み具合 > 季節。1つだけ返す。
+    event_state: meteor.StageEvents.hint_state() の辞書 (予告中・穴・食料の倍率)。イベントのないステージでは None。
     ヒントは、そのステージのidのリストを先に見て、条件に合うものがなければ "default" から選ぶ (idが無ければ default だけ)。"""
     lists = [hints.get(stage_id, [])] if stage_id != "default" else []
     lists.append(hints.get("default", []))
@@ -65,6 +66,14 @@ def pick_hint(warnings, generation, hints, stage_id=None):
             for lst in lists:
                 for h in lst:
                     if h["condition"] == condition:
+                        return h["text"]
+    if event_state:                                # 隕石: 予告中 > 穴が残っている間 > 食料の倍率が低い間
+        for condition in ("event_incoming", "event_crater", "food_mult_low"):
+            for lst in lists:
+                for h in lst:
+                    if h["condition"] != condition:
+                        continue
+                    if (condition == "event_incoming" and event_state.get("incoming"))                             or (condition == "event_crater" and event_state.get("crater"))                             or (condition == "food_mult_low" and event_state.get("food_mult", 1.0) < h.get("below", 0.8)):
                         return h["text"]
     season = season_of(generation) if config.SEASONS_ENABLED else None
     for progress in (True, False):                 # 進み具合の一言 (最初の6世代・18世代以降) を、季節の一言より先に探す
@@ -148,7 +157,7 @@ class GamePanel:
             screen.blit(font.render(line, True, C("bubble_text")), (bubble.x + 10, bubble.y + 9 + i * line_height))
 
     # ---------- 描画 ----------
-    def draw(self, screen, world, stage, game, clear_generations, paused, speed_level, selection, species):
+    def draw(self, screen, world, stage, game, clear_generations, paused, speed_level, selection, species, event_state=None):
         warnings = compute_warnings(world, self.rules)
         pygame.draw.rect(screen, C("gp_bg"), self.rect)
         x, y = self.x, 8
@@ -239,5 +248,5 @@ class GamePanel:
         # 5. リーフのヒント
         y += 4
         self._leaf_card(screen, y, self.rect.bottom - y - 6, "リーフのヒント",
-                        pick_hint(warnings, world.generation, self.hints, stage["id"]), C("leaf_title"))
+                        pick_hint(warnings, world.generation, self.hints, stage["id"], event_state), C("leaf_title"))
         return warnings

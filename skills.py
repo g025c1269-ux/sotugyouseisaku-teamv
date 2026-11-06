@@ -27,11 +27,13 @@ def load_game_skills(path=DATA_DIR / "skills.json"):
 
 
 class GameState:
-    def __init__(self, rules=None, skills=None):
+    def __init__(self, rules=None, skills=None, mp_start=None):
+        """mp_start: 開始時のMP (ステージの設定)。Noneなら game_rules.json の mp_start、それもなければ最大値。"""
         self.rules = rules if rules is not None else load_rules()
         self.skills = skills if skills is not None else load_game_skills()
         self.mp_max = float(self.rules["mp_max"])
-        self.mp = self.mp_max                                    # 開始時は最大
+        start = mp_start if mp_start is not None else self.rules.get("mp_start", self.mp_max)
+        self.mp = min(self.mp_max, max(0.0, float(start)))        # 最大値を超えない
         self.regen_per_step = float(self.rules["mp_regen_per_generation"]) / config.MAX_STEPS_PER_GEN
 
     def tick(self):

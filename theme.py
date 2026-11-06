@@ -209,9 +209,17 @@ def save_settings():
     """いまの配色を保存する (保存できなくても、画面は止めない)。"""
     try:
         SETTINGS_PATH.parent.mkdir(exist_ok=True)
+        saved = {}
+        try:                                         # 配色以外の項目 (季節の演出の設定など) は、消さずに残す
+            with open(SETTINGS_PATH, encoding="utf-8") as f:
+                loaded = json.load(f)
+            saved = loaded if isinstance(loaded, dict) else {}
+        except Exception:
+            pass
+        saved["theme"] = _current
         tmp = SETTINGS_PATH.with_suffix(".tmp")
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"theme": _current}, f, ensure_ascii=False)
+            json.dump(saved, f, ensure_ascii=False)
         os.replace(tmp, SETTINGS_PATH)
     except Exception:
         pass
